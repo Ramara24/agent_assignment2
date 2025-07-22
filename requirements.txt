@@ -1,0 +1,8 @@
+streamlit
+datasets
+pandas
+langchain
+langchain_openai
+langgraph
+langchain_core
+sqlite3
