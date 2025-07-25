@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph_checkpoints.sqlite import SqliteSaver
 import os
 import json
 import uuid
