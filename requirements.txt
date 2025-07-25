@@ -4,5 +4,5 @@ pandas
 langchain
 langchain_openai
 langchain_core
-langgraph==0.6.0a2
+langgraph==0.6.0a2 --pre
 langgraph-checkpoints
