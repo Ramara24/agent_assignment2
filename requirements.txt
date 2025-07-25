@@ -3,5 +3,5 @@ datasets
 pandas
 langchain
 langchain_openai
-langgraph[checkpoint]
+langgraph-checkpoint
 langchain_core
