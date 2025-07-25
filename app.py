@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
-from langgraph.graphs import StateGraph, END
+from langgraph.graph import StateGraph, END
 from langgraph.checkpoints import SqliteSaver
 from langchain_core.runnables import RunnableConfig
 import os
