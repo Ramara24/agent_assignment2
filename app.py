@@ -116,6 +116,8 @@ class GraphState(dict):
     final_response: str
 
 def classify_query(state: GraphState):
+    state = state.copy()  # <--- CRITICAL: avoid mutating input directly
+
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     last_message = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)][-1]
     system = """
@@ -135,7 +137,8 @@ def classify_query(state: GraphState):
     else:
         state["query_type"] = "out_of_scope"
 
-    return state
+    return state  # now safe with return_dict=False
+
 
 
     
