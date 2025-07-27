@@ -128,17 +128,19 @@ def classify_query(state: GraphState):
     classification = response.content.lower()
     return {"query_type": "structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope"}
     
-def generate_final_response(state: GraphState):
+def generate_final_response(state: GraphState): 
     """Generate the final assistant response from messages or tool results."""
     if state.get("last_tool_results"):
         result = state["last_tool_results"][-1]
-        # If it's a list (like from get_top_categories), join it nicely
         if isinstance(result, list):
             content = "The most frequent categories are: " + ", ".join(result)
+        elif isinstance(result, dict):
+            # Format dicts (e.g., intent distribution)
+            lines = [f"{k}: {v}" for k, v in result.items()]
+            content = "Intent Distribution:\n\n" + "\n".join(lines)
         else:
             content = str(result)
     else:
-        # Fallback to the last AI message
         last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
         content = last_ai.content if last_ai else "No response generated."
 
