@@ -71,7 +71,7 @@ def make_tools(df: pd.DataFrame):
 
     @tool
     def summarize(topic: str) -> str:
-         """
+        """
         Provide a brief summary by sampling up to 5 examples from a given category or intent.
 
         Args:
