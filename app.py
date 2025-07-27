@@ -116,34 +116,40 @@ class GraphState(dict):
     final_response: str
 
 def classify_query(state: GraphState):
-    state = state.copy()
+    # Remove the state.copy() as we need to modify the actual state
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
-    last_message = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)][-1]
+    
+    # Get all human messages
+    human_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
+    if not human_messages:
+        state["query_type"] = "out_of_scope"
+        return state
+    
+    last_message = human_messages[-1]
     system = """
     Classify the user query into one of:
-    - structured
-    - unstructured
-    - out_of_scope
+    - structured: Questions about dataset statistics, counts, distributions, or specific examples
+    - unstructured: Requests for summaries or insights about the data
+    - out_of_scope: Anything unrelated to customer support data analysis
     """
-    messages = [("system", system), *[(msg.type, msg.content) for msg in state["messages"]], ("human", "Classify this query: " + last_message.content)]
-
-    print(">>> Messages sent to LLM for classification:")
-    for m in messages:
-        print(m)
-
+    
+    messages = [
+        SystemMessage(content=system),
+        HumanMessage(content=f"Classify this query: {last_message.content}")
+    ]
+    
     response = llm.invoke(messages)
     classification = response.content.lower().strip()
-
-    print(f">>> Classification result from LLM: {classification}")
-
+    
+    # Set query_type directly in state
     if "structured" in classification:
         state["query_type"] = "structured"
     elif "unstructured" in classification:
         state["query_type"] = "unstructured"
     else:
         state["query_type"] = "out_of_scope"
-
-    print(f">>> Returning state from classify_query: {state}")
+    
+    print(f">>> Classification result: {state['query_type']}")
     return state
 
 
@@ -231,10 +237,13 @@ def build_workflow():
     # Set entry point and explicitly add START edge
     workflow.set_entry_point("classify")
     workflow.add_edge(START, "classify") 
-
-    # Define conditional routing function
+    
     def route_from_classify(state: dict) -> str:
-        state = state["classify"]
+        # Access query_type directly from the state dictionary
+        if "query_type" not in state:
+            print("⚠️ Warning: query_type not found! Defaulting to out_of_scope")
+            return "out_of_scope"
+        print(f">>> Routing to: {state['query_type']}")
         return state["query_type"]
 
     # Add conditional branching
@@ -261,15 +270,20 @@ def main():
     tools = make_tools(df)
     workflow = build_workflow()
     st.title("📊 Customer Support Data Analyst")
+    
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
         st.session_state.messages = []
+    
     session_id = st.sidebar.text_input("Session ID", value=st.session_state.session_id)
+    
     if session_id != st.session_state.session_id:
         st.session_state.session_id = session_id
         st.session_state.messages = []
         st.experimental_rerun()
+    
     st.sidebar.write(f"Active Session: `{session_id}`")
+    
     if st.sidebar.button("Show My Memory"):
         config = RunnableConfig(configurable={"thread_id": session_id})
         try:
@@ -281,28 +295,35 @@ def main():
                 st.sidebar.info("No memory stored yet")
         except Exception:
             st.sidebar.warning("Couldn't retrieve memory")
+    
     for msg in st.session_state.messages:
         st.chat_message(msg["role"]).markdown(msg["content"])
+    
     if prompt := st.chat_input("Ask about the dataset..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").markdown(prompt)
+        
         with st.spinner("Analyzing..."):
             initial_state = {
                 "messages": [HumanMessage(content=prompt)],
                 "session_id": session_id,
                 "last_tool_results": [],
-                "user_summary": ""
+                "user_summary": "",
+                # Initialize query_type to avoid KeyError
+                "query_type": None  
             }
+            
             config = RunnableConfig(configurable={"tools": tools, "thread_id": session_id})
+            
             for step in workflow.stream(initial_state, config):
                 print(">>> Step output:", step, flush=True)
+                
                 if "generate_final_response" in step:
                     final_state = step["generate_final_response"]
                     response = final_state.get("final_response", "No response generated.")
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     print(f"FINAL RESPONSE TO DISPLAY: {response}")
                     st.chat_message("assistant").markdown(response)
-                    
 
 if __name__ == "__main__":
     main()
