@@ -177,7 +177,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
-            result = tool_func.invoke(**args)
+            result = tool_func(**args)
             results.append(result)
             
             # Add tool message to state
@@ -231,7 +231,7 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
-            result = tool_func.invoke(**args)
+            result = tool_func(**args)
             results.append(result)
             
             # Add tool message to state
