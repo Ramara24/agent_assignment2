@@ -125,14 +125,36 @@ def classify_query(state: GraphState):
         return state
     
     last_message = human_messages[-1]
+    content = last_message.content.lower()
+    
+    # First, check for unstructured patterns
+    if "summarize" in content:
+        state["query_type"] = "unstructured"
+        return state
+        
+    # Then check for structured patterns
+    structured_keywords = [
+        "frequent", "examples", "categories", "distributions", 
+        "count", "show", "what", "how many", "list", "intent"
+    ]
+    if any(keyword in content for keyword in structured_keywords):
+        state["query_type"] = "structured"
+        return state
+    
+    # If no patterns match, use LLM for classification
     system = """
     Classify the user query into one of:
-    - structured: Questions about dataset statistics, counts, distributions, or specific examples
-    - unstructured: Requests for summaries or insights about the data
-    - out_of_scope: Anything unrelated to customer support data analysis
+    - structured: Questions about counts, distributions, or specific examples
+    - unstructured: Requests for summaries
+    - out_of_scope: Anything else
+    
+    Examples:
+    - "What are the most frequent categories?" → structured
+    - "Show examples of Category X" → structured
+    - "Summarize Category X" → unstructured
+    - "Who is Magnus Carlson?" → out_of_scope
     """
     
-    # Use message objects directly
     messages = [
         SystemMessage(content=system),
         HumanMessage(content=f"Classify this query: {last_message.content}")
@@ -141,7 +163,7 @@ def classify_query(state: GraphState):
     response = llm.invoke(messages)
     classification = response.content.lower().strip()
     
-    # Set query_type directly in state
+    # Set query_type based on classification
     if "structured" in classification:
         state["query_type"] = "structured"
     elif "unstructured" in classification:
@@ -151,9 +173,6 @@ def classify_query(state: GraphState):
     
     print(f">>> Classification result: {state['query_type']}")
     return state
-
-
-
 
 
     
