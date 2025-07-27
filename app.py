@@ -176,7 +176,7 @@ def classify_query(state: GraphState):
 
 
     
-def generate_final_response(state: GraphState): 
+def generate_final_response_temp(state: GraphState): 
     """Generate the final assistant response from messages or tool results."""
     if state.get("last_tool_results"):
         result = state["last_tool_results"][-1]
@@ -184,6 +184,30 @@ def generate_final_response(state: GraphState):
             content = "The most frequent categories are: " + ", ".join(result)
         elif isinstance(result, dict):
             # Format dicts (e.g., intent distribution)
+            lines = [f"{k}: {v}" for k, v in result.items()]
+            content = "Intent Distribution:\n\n" + "\n".join(lines)
+        else:
+            content = str(result)
+    else:
+        last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
+        content = last_ai.content if last_ai else "No response generated."
+
+    state["final_response"] = content
+    state["messages"].append(AIMessage(content=content))
+    return state
+
+def generate_final_response(state: GraphState): 
+    """Generate the final assistant response from messages or tool results."""
+    # Handle out-of-scope queries specifically
+    if state.get("query_type") == "out_of_scope":
+        content = "I can only answer questions about customer service data. Please ask about the dataset, categories, intents, or summaries."
+    
+    # Handle structured/unstructured queries
+    elif state.get("last_tool_results"):
+        result = state["last_tool_results"][-1]
+        if isinstance(result, list):
+            content = "The most frequent categories are: " + ", ".join(result)
+        elif isinstance(result, dict):
             lines = [f"{k}: {v}" for k, v in result.items()]
             content = "Intent Distribution:\n\n" + "\n".join(lines)
         else:
