@@ -28,22 +28,35 @@ def load_dataset_to_df() -> pd.DataFrame:
 def make_tools(df: pd.DataFrame):
     @tool
     def get_all_categories() -> List[str]:
+        """Return all unique categories in the dataset."""
         return sorted(df['category'].unique().tolist())
 
     @tool
     def get_all_intents() -> List[str]:
+        """Return all unique intents in the dataset."""
         return sorted(df['intent'].unique().tolist())
 
     @tool
     def count_category(category: str) -> int:
+          """Counts the number of examples in each category and returns the result."""
         return len(df[df['category'] == category.upper()])
 
     @tool
     def count_intent(intent: str) -> int:
+        """Counts the number of examples in each intent and returns the result."""
         return len(df[df['intent'] == intent.lower()])
 
     @tool
     def show_examples(n: int, category: Optional[str] = None, intent: Optional[str] = None) -> str:
+        """
+        Show up to `n` random conversation examples from the dataset, optionally filtered by category and/or intent.
+        Args:
+            n: Number of examples to show.
+            category: Optional category to filter examples (case-insensitive).
+            intent: Optional intent to filter examples (case-insensitive).
+        Returns:
+            A markdown-formatted string with the selected customer-agent examples.
+        """
         filtered = df.copy()
         if category:
             filtered = filtered[filtered['category'] == category.upper()]
@@ -58,6 +71,15 @@ def make_tools(df: pd.DataFrame):
 
     @tool
     def summarize(topic: str) -> str:
+         """
+        Provide a brief summary by sampling up to 5 examples from a given category or intent.
+
+        Args:
+            topic: A category (uppercase) or intent (lowercase) to summarize.
+
+        Returns:
+            A text snippet showing customer-agent interactions for the selected topic.
+        """
         filtered = df.copy()
         if topic.upper() in df['category'].unique():
             filtered = filtered[filtered['category'] == topic.upper()]
