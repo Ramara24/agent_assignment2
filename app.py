@@ -129,11 +129,14 @@ def classify_query(state: GraphState):
     classification = response.content.lower().strip()
 
     if "structured" in classification:
-        return {"query_type": "structured"}
+        state["query_type"] = "structured"
     elif "unstructured" in classification:
-        return {"query_type": "unstructured"}
+        state["query_type"] = "unstructured"
     else:
-        return {"query_type": "out_of_scope"}
+        state["query_type"] = "out_of_scope"
+
+    return state
+
 
     
 def generate_final_response(state: GraphState): 
