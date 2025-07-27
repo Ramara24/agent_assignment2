@@ -248,7 +248,7 @@ def main():
             config = RunnableConfig(configurable={"tools": tools, "thread_id": session_id})
             for step in workflow.stream(initial_state, config):
                 print(">>> Step output:", step, flush=True)
-                if "__end__" in step:
+                if "generate_final_response" in step:
                     final_state = step["__end__"]
                     response = final_state.get("final_response", "No response generated.")
                     st.session_state.messages.append({"role": "assistant", "content": response})
