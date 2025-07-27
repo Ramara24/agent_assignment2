@@ -236,7 +236,6 @@ def build_workflow():
     # Transitions
     workflow.add_edge("structured_agent", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
-    workflow.add_edge("out_of_scope", "update_memory")
     workflow.add_edge("update_memory", "generate_final_response")
     workflow.add_edge("generate_final_response", END)
 
