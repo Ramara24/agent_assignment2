@@ -143,7 +143,8 @@ def classify_query(state: GraphState):
 def structured_agent(state: GraphState, config: RunnableConfig):
     """Handle structured queries with dedicated tools"""
     configurable = config.get("configurable", {})
-    handler = config.configurable.get("handler")
+    handler = config.get("configurable", {}).get("handler")
+
     
     if not handler:
         # Handle missing handler gracefully
@@ -203,9 +204,8 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 def unstructured_agent(state: GraphState, config: RunnableConfig):
     """Handle unstructured queries with summarization tools"""
     configurable = config.get("configurable", {})
-    handler = config.configurable.get("handler")
+    handler = config.get("configurable", {}).get("handler")
 
-    
     if not handler:
         # Handle missing handler gracefully
         state["messages"].append(AIMessage(content="System error: Tool handler not available"))
