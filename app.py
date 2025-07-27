@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import StateGraph, END, START
 from typing import Dict
 import uuid
 import operator
@@ -215,7 +216,7 @@ def build_workflow():
 
     # Set entry point and explicitly add START edge
     workflow.set_entry_point("classify")
-    workflow.add_edge("START", "classify")  # 👈 required in older versions
+    workflow.add_edge(START, "classify") 
 
     # Define conditional routing function
     def route_from_classify(state: GraphState) -> str:
