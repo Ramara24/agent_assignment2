@@ -233,7 +233,8 @@ def build_workflow():
     workflow.add_edge(START, "classify") 
 
     # Define conditional routing function
-    def route_from_classify(state: GraphState) -> str:
+    def route_from_classify(state: dict) -> str:
+        state = state["classify"]
         return state["query_type"]
 
     # Add conditional branching
