@@ -125,8 +125,15 @@ def classify_query(state: GraphState):
     """
     messages = [("system", system), *[(msg.type, msg.content) for msg in state["messages"]], ("human", "Classify this query: " + last_message.content)]
     response = llm.invoke(messages)
-    classification = response.content.lower()
-    return ("structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope")
+    classification = response.content.lower().strip()
+
+    if "structured" in classification:
+        return {"query_type": "structured"}
+    elif "unstructured" in classification:
+        return {"query_type": "unstructured"}
+    else:
+        return {"query_type": "out_of_scope"}
+
     
 def generate_final_response(state: GraphState): 
     """Generate the final assistant response from messages or tool results."""
@@ -203,11 +210,16 @@ def build_workflow():
     workflow.add_node("out_of_scope", out_of_scope_handler)
     workflow.add_node("update_memory", update_summary_memory)
     workflow.set_entry_point("classify")
-    workflow.add_conditional_edges("classify", lambda s: s.get("query_type", "structured"), {
-        "structured": "structured_agent",
-        "unstructured": "unstructured_agent",
-        "out_of_scope": "out_of_scope"
-    })
+    workflow.add_conditional_edges(
+        "classify",
+        {
+            "structured": "structured_agent",
+            "unstructured": "unstructured_agent",
+            "out_of_scope": "generate_final_response",
+        },
+        # This is the key returned by classify_query
+        condition_key="query_type"
+    )
     workflow.add_edge("structured_agent", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
     workflow.add_edge("out_of_scope", "update_memory")
