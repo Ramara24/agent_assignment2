@@ -106,6 +106,7 @@ class GraphState(dict):
     session_id: str
     user_summary: str
     last_tool_results: List[str]
+    final_response: str
 
 def classify_query(state: GraphState):
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
@@ -120,6 +121,24 @@ def classify_query(state: GraphState):
     response = llm.invoke(messages)
     classification = response.content.lower()
     return {"query_type": "structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope"}
+    
+def generate_final_response(state: GraphState):
+    """Generate the final assistant response from messages or tool results."""
+    if state.get("last_tool_results"):
+        result = state["last_tool_results"][-1]
+        # If it's a list (like from get_top_categories), join it nicely
+        if isinstance(result, list):
+            content = "The most frequent categories are: " + ", ".join(result)
+        else:
+            content = str(result)
+    else:
+        # Fallback to the last AI message
+        last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
+        content = last_ai.content if last_ai else "No response generated."
+
+    state["final_response"] = content
+    state["messages"].append(AIMessage(content=content))
+    return state
 
 def structured_agent(state: GraphState, config: RunnableConfig):
     print(">>> Entered structured_agent", flush=True)
@@ -184,7 +203,9 @@ def build_workflow():
     workflow.add_edge("structured_agent", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
     workflow.add_edge("out_of_scope", "update_memory")
-    workflow.add_edge("update_memory", END)
+    workflow.add_node("generate_final_response", generate_final_response)
+    workflow.add_edge("update_memory", "generate_final_response")
+    workflow.add_edge("generate_final_response", END)
     return workflow.compile(checkpointer=memory)
 
 def main():
@@ -229,8 +250,7 @@ def main():
                 print(">>> Step output:", step, flush=True)
                 if "__end__" in step:
                     final_state = step["__end__"]
-                    last_ai = next((m for m in reversed(final_state["messages"]) if isinstance(m, AIMessage)), None)
-                    response = last_ai.content if last_ai else "No response generated."
+                    response = final_state.get("final_response", "No response generated.")
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     st.chat_message("assistant").markdown(response)
 
