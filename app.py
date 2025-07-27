@@ -131,7 +131,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
-            result = tool_func(**args)
+            result = tool_func.invoke(args)
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
         except StopIteration:
