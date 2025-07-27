@@ -47,9 +47,9 @@ def make_tools(df: pd.DataFrame):
         return len(df[df['intent'] == intent.lower()])
         
     @tool
-    def get_top_categories(self, n: int = 5) -> List[str]:
-        """Return the top N most frequent categories"""
-        return self.df['category'].value_counts().head(n).index.tolist()
+    def get_top_categories(n: int = 5) -> List[str]:
+        """Return the top N most frequent categories."""
+        return df['category'].value_counts().head(n).index.tolist()
 
     @tool
     def show_examples(n: int, category: Optional[str] = None, intent: Optional[str] = None) -> str:
@@ -99,7 +99,7 @@ def make_tools(df: pd.DataFrame):
         response = llm.invoke(f"Summarize key patterns from these customer service examples about {topic}:\n\n{text_examples}")
         return response.content
 
-    return [get_all_categories, get_all_intents, count_category, count_intent, show_examples, summarize]
+    return [get_all_categories, get_all_intents, count_category, count_intent, get_top_categories, show_examples, summarize]
 
 class GraphState(dict):
     messages: List[BaseMessage]
