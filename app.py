@@ -21,7 +21,7 @@ import operator
 # --- Constants ---
 DATASET_NAME = "bitext/Bitext-customer-support-llm-chatbot-training-dataset"
 MODEL_NAME = "gpt-3.5-turbo"
-OPENAI_API_KEY = "OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 DB_FILE = "conversation_memory.db"
 SUMMARY_MEMORY_LIMIT = 3  # Max key facts to remember about user
 
