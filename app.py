@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver  # Updated import
+from langgraph.checkpoints.sqlite import SqliteSaver
 from langchain_core.runnables import RunnableConfig
 import os
 import json
