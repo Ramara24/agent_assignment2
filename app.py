@@ -220,7 +220,7 @@ def generate_final_response(state: GraphState):
     state["messages"].append(AIMessage(content=content))
     return state
 
-def structured_agent(state: GraphState, config: RunnableConfig):
+def structured_agent_temp(state: GraphState, config: RunnableConfig):
     print(">>> Entered structured_agent", flush=True)
     print("State:", state, flush=True)
     tools = config.get("configurable", {}).get("tools", [])
@@ -247,9 +247,96 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     state["last_tool_results"] = results
     return state
 
-def unstructured_agent(state: GraphState, config: RunnableConfig):
+def unstructured_agent_temp(state: GraphState, config: RunnableConfig):
     return structured_agent(state, config)
 
+def structured_agent(state: GraphState, config: RunnableConfig):
+    print(">>> Entered structured_agent", flush=True)
+    tools = config.get("configurable", {}).get("tools", [])
+    if not tools:
+        state["messages"].append(AIMessage(content="System error: tools not found"))
+        return state
+    
+    # Filter tools for structured queries
+    structured_tools = [t for t in tools if t.name != "summarize"]
+    
+    llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
+    
+    # Add system prompt for structured queries
+    structured_prompt = SystemMessage(
+        content="You are a data analyst for customer support queries. "
+                "Answer structured questions about categories, intents, and examples. "
+                "Use available tools to get precise data."
+    )
+    
+    # Create new messages with system prompt
+    messages = [structured_prompt] + state["messages"]
+    
+    llm_with_tools = llm.bind_tools(structured_tools)
+    response = llm_with_tools.invoke(messages)
+    tool_calls = response.tool_calls
+    results = []
+    
+    for tool_call in tool_calls:
+        tool_name = tool_call["name"]
+        args = tool_call["args"]
+        try:
+            tool_func = next(t for t in structured_tools if t.name == tool_name)
+            print(f"Invoking tool: {tool_name} with args {args}", flush=True)
+            result = tool_func.invoke(args)
+            print(f"Tool result: {result}", flush=True)
+            results.append(result)
+            state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
+        except StopIteration:
+            state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
+    
+    state["last_tool_results"] = results
+    return state
+
+def unstructured_agent(state: GraphState, config: RunnableConfig):
+    print(">>> Entered unstructured_agent", flush=True)
+    tools = config.get("configurable", {}).get("tools", [])
+    if not tools:
+        state["messages"].append(AIMessage(content="System error: tools not found"))
+        return state
+    
+    # Focus only on summarize tool for unstructured queries
+    summarize_tool = next((t for t in tools if t.name == "summarize"), None)
+    if not summarize_tool:
+        state["messages"].append(AIMessage(content="System error: summarize tool not found"))
+        return state
+    
+    llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
+    
+    # Add specialized prompt for summarization
+    summarize_prompt = SystemMessage(
+        content="You are a summarization specialist. Your task is to generate concise summaries "
+                "of customer service interactions. Use the summarize tool to extract key patterns "
+                "from the dataset."
+    )
+    
+    # Create new messages with system prompt
+    messages = [summarize_prompt] + state["messages"]
+    
+    llm_with_tool = llm.bind_tools([summarize_tool])
+    response = llm_with_tool.invoke(messages)
+    tool_calls = response.tool_calls
+    results = []
+    
+    for tool_call in tool_calls:
+        if tool_call["name"] == "summarize":
+            args = tool_call["args"]
+            print(f"Invoking summarize tool with args {args}", flush=True)
+            result = summarize_tool.invoke(args)
+            print(f"Summarize result: {result}", flush=True)
+            results.append(result)
+            state["messages"].append(AIMessage(content=f"Summary: {result}"))
+        else:
+            state["messages"].append(AIMessage(content="I can only generate summaries for unstructured queries"))
+    
+    state["last_tool_results"] = results
+    return state
+    
 def out_of_scope_handler(state: GraphState):
     state["messages"].append(AIMessage(content="I can only answer questions about customer service data."))
     return state
