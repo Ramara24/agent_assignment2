@@ -45,9 +45,10 @@ def make_tools(df: pd.DataFrame):
     def count_intent(intent: str) -> int:
         """Counts the number of examples in each intent and returns the result."""
         return len(df[df['intent'] == intent.lower()])
+        
     @tool
     def get_top_categories(self, n: int = 5) -> List[str]:
-         """Return the top N most frequent categories"""
+        """Return the top N most frequent categories"""
         return self.df['category'].value_counts().head(n).index.tolist()
 
     @tool
