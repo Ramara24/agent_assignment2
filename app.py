@@ -45,6 +45,11 @@ def make_tools(df: pd.DataFrame):
     def count_intent(intent: str) -> int:
         """Counts the number of examples in each intent and returns the result."""
         return len(df[df['intent'] == intent.lower()])
+
+    @tool
+    def get_intent_distribution(self) -> Dict[str, int]:
+         """Show intent distributions."""
+        return df['intent'].value_counts().to_dict()
         
     @tool
     def get_top_categories(n: int = 5) -> List[str]:
@@ -99,7 +104,7 @@ def make_tools(df: pd.DataFrame):
         response = llm.invoke(f"Summarize key patterns from these customer service examples about {topic}:\n\n{text_examples}")
         return response.content
 
-    return [get_all_categories, get_all_intents, count_category, count_intent, get_top_categories, show_examples, summarize]
+    return [get_all_categories, get_all_intents, get_intent_distribution, count_category, count_intent, get_top_categories, show_examples, summarize]
 
 class GraphState(dict):
     messages: List[BaseMessage]
