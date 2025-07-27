@@ -38,7 +38,7 @@ def make_tools(df: pd.DataFrame):
 
     @tool
     def count_category(category: str) -> int:
-          """Counts the number of examples in each category and returns the result."""
+        """Counts the number of examples in each category and returns the result."""
         return len(df[df['category'] == category.upper()])
 
     @tool
