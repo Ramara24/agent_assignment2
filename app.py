@@ -209,16 +209,17 @@ def build_workflow():
     workflow.add_node("unstructured_agent", unstructured_agent)
     workflow.add_node("out_of_scope", out_of_scope_handler)
     workflow.add_node("update_memory", update_summary_memory)
-    workflow.set_entry_point("classify")
+    def route_from_classify(state: GraphState) -> str:
+        return state["query_type"]
+
     workflow.add_conditional_edges(
         "classify",
+        route_from_classify,
         {
             "structured": "structured_agent",
             "unstructured": "unstructured_agent",
             "out_of_scope": "generate_final_response",
-        },
-        # This is the key returned by classify_query
-        condition_key="query_type"
+        }
     )
     workflow.add_edge("structured_agent", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
