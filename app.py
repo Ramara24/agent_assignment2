@@ -252,7 +252,9 @@ def main():
                     final_state = step["__end__"]
                     response = final_state.get("final_response", "No response generated.")
                     st.session_state.messages.append({"role": "assistant", "content": response})
+                    print(f"FINAL RESPONSE TO DISPLAY: {response}")
                     st.chat_message("assistant").markdown(response)
+                    
 
 if __name__ == "__main__":
     main()
