@@ -204,14 +204,24 @@ def update_summary_memory(state: GraphState, config: RunnableConfig):
 
 def build_workflow():
     workflow = StateGraph(GraphState)
+
+    # Add all nodes
     workflow.add_node("classify", classify_query)
     workflow.add_node("structured_agent", structured_agent)
     workflow.add_node("unstructured_agent", unstructured_agent)
     workflow.add_node("out_of_scope", out_of_scope_handler)
     workflow.add_node("update_memory", update_summary_memory)
+    workflow.add_node("generate_final_response", generate_final_response)
+
+    # Set entry point and explicitly add START edge
+    workflow.set_entry_point("classify")
+    workflow.add_edge("START", "classify")  # 👈 required in older versions
+
+    # Define conditional routing function
     def route_from_classify(state: GraphState) -> str:
         return state["query_type"]
 
+    # Add conditional branching
     workflow.add_conditional_edges(
         "classify",
         route_from_classify,
@@ -221,12 +231,14 @@ def build_workflow():
             "out_of_scope": "generate_final_response",
         }
     )
+
+    # Transitions
     workflow.add_edge("structured_agent", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
     workflow.add_edge("out_of_scope", "update_memory")
-    workflow.add_node("generate_final_response", generate_final_response)
     workflow.add_edge("update_memory", "generate_final_response")
     workflow.add_edge("generate_final_response", END)
+
     return workflow.compile(checkpointer=memory)
 
 def main():
