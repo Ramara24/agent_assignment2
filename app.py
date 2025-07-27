@@ -21,7 +21,7 @@ import operator
 # --- Constants ---
 DATASET_NAME = "bitext/Bitext-customer-support-llm-chatbot-training-dataset"
 MODEL_NAME = "gpt-3.5-turbo"
-OPENAI_API_KEY = "your_api_key_here"
+OPENAI_API_KEY = "OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 DB_FILE = "conversation_memory.db"
 SUMMARY_MEMORY_LIMIT = 3  # Max key facts to remember about user
 
@@ -345,15 +345,15 @@ def main():
     st.title("📊 Customer Support Data Analyst (LangGraph + Memory)")
     st.write(f"Dataset stats: {len(df)} rows, {df['intent'].nunique()} intents, {df['category'].nunique()}")
     
-    # Session management
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.messages = []  # Initialize messages here
     
     # Session ID input
     session_id = st.sidebar.text_input("Session ID", value=st.session_state.session_id)
     if session_id != st.session_state.session_id:
         st.session_state.session_id = session_id
-        st.session_state.messages = []
+        st.session_state.messages = []  # Reset messages on session change
         st.experimental_rerun()
     
     st.sidebar.write(f"Active Session: `{session_id}`")
