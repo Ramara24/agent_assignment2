@@ -249,7 +249,7 @@ def main():
             for step in workflow.stream(initial_state, config):
                 print(">>> Step output:", step, flush=True)
                 if "generate_final_response" in step:
-                    final_state = step["__end__"]
+                    final_state = step["generate_final_response"]
                     response = final_state.get("final_response", "No response generated.")
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     print(f"FINAL RESPONSE TO DISPLAY: {response}")
