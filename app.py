@@ -126,7 +126,7 @@ def classify_query(state: GraphState):
     messages = [("system", system), *[(msg.type, msg.content) for msg in state["messages"]], ("human", "Classify this query: " + last_message.content)]
     response = llm.invoke(messages)
     classification = response.content.lower()
-    return {"query_type": "structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope"}
+    return ("structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope")
     
 def generate_final_response(state: GraphState): 
     """Generate the final assistant response from messages or tool results."""
