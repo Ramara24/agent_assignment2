@@ -48,9 +48,9 @@ def make_tools(df: pd.DataFrame):
 
     @tool
     def get_intent_distribution(self) -> Dict[str, int]:
-         """Show intent distributions."""
+        """Show intent distributions."""
         return df['intent'].value_counts().to_dict()
-        
+
     @tool
     def get_top_categories(n: int = 5) -> List[str]:
         """Return the top N most frequent categories."""
