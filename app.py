@@ -116,8 +116,7 @@ class GraphState(dict):
     final_response: str
 
 def classify_query(state: GraphState):
-    state = state.copy()  # <--- CRITICAL: avoid mutating input directly
-
+    state = state.copy()
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     last_message = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)][-1]
     system = """
@@ -127,8 +126,15 @@ def classify_query(state: GraphState):
     - out_of_scope
     """
     messages = [("system", system), *[(msg.type, msg.content) for msg in state["messages"]], ("human", "Classify this query: " + last_message.content)]
+
+    print(">>> Messages sent to LLM for classification:")
+    for m in messages:
+        print(m)
+
     response = llm.invoke(messages)
     classification = response.content.lower().strip()
+
+    print(f">>> Classification result from LLM: {classification}")
 
     if "structured" in classification:
         state["query_type"] = "structured"
@@ -137,7 +143,9 @@ def classify_query(state: GraphState):
     else:
         state["query_type"] = "out_of_scope"
 
-    return state  # now safe with return_dict=False
+    print(f">>> Returning state from classify_query: {state}")
+    return state
+
 
 
 
