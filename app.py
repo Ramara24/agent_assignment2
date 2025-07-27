@@ -15,14 +15,12 @@ from langchain_core.runnables import RunnableConfig
 import os
 import json
 import uuid
-import sqlite3
 import operator
 
 # --- Constants ---
 DATASET_NAME = "bitext/Bitext-customer-support-llm-chatbot-training-dataset"
 MODEL_NAME = "gpt-3.5-turbo"
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-DB_FILE = "conversation_memory.db"
 SUMMARY_MEMORY_LIMIT = 3  # Max key facts to remember about user
 
 # --- Load dataset ---
@@ -144,7 +142,14 @@ def classify_query(state: GraphState):
 # --- Structured Agent Node ---
 def structured_agent(state: GraphState, config: RunnableConfig):
     """Handle structured queries with dedicated tools"""
-    handler = config["handler"]
+    configurable = config.get("configurable", {})
+    handler = configurable.get("handler")
+    
+    if not handler:
+        # Handle missing handler gracefully
+        state["messages"].append(AIMessage(content="System error: Tool handler not available"))
+        return state
+        
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     
     # Structured tools
@@ -169,19 +174,26 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
-        tool_func = next(t for t in tools if t.name == tool_name)
-        result = tool_func.invoke(args)
-        results.append(result)
-        
-        # Add tool message to state
-        state["messages"].append(AIMessage(
-            content=f"Tool {tool_name} called with args {args}. Result: {result}",
-            tool_calls=[tool_call]
-        ))
-        state["messages"].append(AIMessage(
-            content=f"Tool {tool_name} result: {result}",
-            name=tool_name
-        ))
+        try:
+            tool_func = next(t for t in tools if t.name == tool_name)
+            result = tool_func.invoke(args)
+            results.append(result)
+            
+            # Add tool message to state
+            state["messages"].append(AIMessage(
+                content=f"Tool {tool_name} called with args {args}. Result: {result}",
+                tool_calls=[tool_call]
+            ))
+            state["messages"].append(AIMessage(
+                content=f"Tool {tool_name} result: {result}",
+                name=tool_name
+            ))
+        except StopIteration:
+            # Handle unknown tool
+            state["messages"].append(AIMessage(
+                content=f"Unknown tool called: {tool_name}",
+                name="error_handler"
+            ))
     
     # Store results for follow-up queries
     state["last_tool_results"] = results
@@ -190,7 +202,14 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 # --- Unstructured Agent Node ---
 def unstructured_agent(state: GraphState, config: RunnableConfig):
     """Handle unstructured queries with summarization tools"""
-    handler = config["handler"]
+    configurable = config.get("configurable", {})
+    handler = configurable.get("handler")
+    
+    if not handler:
+        # Handle missing handler gracefully
+        state["messages"].append(AIMessage(content="System error: Tool handler not available"))
+        return state
+        
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     
     # Unstructured tools
@@ -209,19 +228,26 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
-        tool_func = next(t for t in tools if t.name == tool_name)
-        result = tool_func.invoke(args)
-        results.append(result)
-        
-        # Add tool message to state
-        state["messages"].append(AIMessage(
-            content=f"Tool {tool_name} called with args {args}. Result: {result}",
-            tool_calls=[tool_call]
-        ))
-        state["messages"].append(AIMessage(
-            content=f"Tool {tool_name} result: {result}",
-            name=tool_name
-        ))
+        try:
+            tool_func = next(t for t in tools if t.name == tool_name)
+            result = tool_func.invoke(args)
+            results.append(result)
+            
+            # Add tool message to state
+            state["messages"].append(AIMessage(
+                content=f"Tool {tool_name} called with args {args}. Result: {result}",
+                tool_calls=[tool_call]
+            ))
+            state["messages"].append(AIMessage(
+                content=f"Tool {tool_name} result: {result}",
+                name=tool_name
+            ))
+        except StopIteration:
+            # Handle unknown tool
+            state["messages"].append(AIMessage(
+                content=f"Unknown tool called: {tool_name}",
+                name="error_handler"
+            ))
     
     # Store results for follow-up queries
     state["last_tool_results"] = results
@@ -346,7 +372,6 @@ def main():
         # Retrieve memory from current state
         config = RunnableConfig(
             configurable={
-                "handler": handler,
                 "thread_id": session_id
             }
         )
@@ -360,10 +385,6 @@ def main():
                 st.sidebar.info("No memory stored yet")
         except Exception:
             st.sidebar.warning("Couldn't retrieve memory")
-    
-    # Initialize messages
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
     
     # Display chat history
     for msg in st.session_state.messages:
@@ -381,10 +402,10 @@ def main():
                 "messages": [HumanMessage(content=prompt)],
                 "session_id": session_id,
                 "last_tool_results": [],
-                "user_summary": ""  # Initialize empty summary
+                "user_summary": ""
             }
             
-            # Run LangGraph workflow
+            # CORRECTED CONFIG (flat structure)
             config = RunnableConfig(
                 configurable={
                     "handler": handler,
