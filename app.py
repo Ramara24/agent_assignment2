@@ -8,6 +8,7 @@ from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
+from typing import Dict
 import uuid
 import operator
 
@@ -47,7 +48,7 @@ def make_tools(df: pd.DataFrame):
         return len(df[df['intent'] == intent.lower()])
 
     @tool
-    def get_intent_distribution(self) -> Dict[str, int]:
+    def get_intent_distribution() -> Dict[str, int]:
         """Show intent distributions."""
         return df['intent'].value_counts().to_dict()
 
