@@ -117,6 +117,8 @@ def classify_query(state: GraphState):
     return {"query_type": "structured" if "structured" in classification else "unstructured" if "unstructured" in classification else "out_of_scope"}
 
 def structured_agent(state: GraphState, config: RunnableConfig):
+    print(">>> Entered structured_agent", flush=True)
+    print("State:", state, flush=True)
     tools = config.get("configurable", {}).get("tools", [])
     if not tools:
         state["messages"].append(AIMessage(content="System error: tools not found"))
@@ -131,7 +133,9 @@ def structured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
+            print(f"Invoking tool: {tool_name} with args {args}", flush=True)
             result = tool_func.invoke(args)
+            print(f"Tool result: {result}", flush=True)
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
         except StopIteration:
@@ -217,6 +221,7 @@ def main():
             }
             config = RunnableConfig(configurable={"tools": tools, "thread_id": session_id})
             for step in workflow.stream(initial_state, config):
+                print(">>> Step output:", step, flush=True)
                 if "__end__" in step:
                     final_state = step["__end__"]
                     last_ai = next((m for m in reversed(final_state["messages"]) if isinstance(m, AIMessage)), None)
