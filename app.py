@@ -143,7 +143,7 @@ def classify_query(state: GraphState):
 def structured_agent(state: GraphState, config: RunnableConfig):
     """Handle structured queries with dedicated tools"""
     configurable = config.get("configurable", {})
-    handler = configurable.get("handler")
+    handler = config.configurable.get("handler")
     
     if not handler:
         # Handle missing handler gracefully
@@ -176,7 +176,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
-            result = tool_func.invoke(args)
+            result = tool_func.invoke(**args)
             results.append(result)
             
             # Add tool message to state
@@ -203,7 +203,8 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 def unstructured_agent(state: GraphState, config: RunnableConfig):
     """Handle unstructured queries with summarization tools"""
     configurable = config.get("configurable", {})
-    handler = configurable.get("handler")
+    handler = config.configurable.get("handler")
+
     
     if not handler:
         # Handle missing handler gracefully
@@ -230,7 +231,7 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
         args = tool_call["args"]
         try:
             tool_func = next(t for t in tools if t.name == tool_name)
-            result = tool_func.invoke(args)
+            result = tool_func.invoke(**args)
             results.append(result)
             
             # Add tool message to state
