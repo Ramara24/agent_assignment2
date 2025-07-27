@@ -3,7 +3,7 @@ from datasets import load_dataset
 import pandas as pd
 from typing import List, Optional
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage 
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -116,7 +116,6 @@ class GraphState(dict):
     final_response: str
 
 def classify_query(state: GraphState):
-    # Remove the state.copy() as we need to modify the actual state
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     
     # Get all human messages
@@ -133,6 +132,7 @@ def classify_query(state: GraphState):
     - out_of_scope: Anything unrelated to customer support data analysis
     """
     
+    # Use message objects directly
     messages = [
         SystemMessage(content=system),
         HumanMessage(content=f"Classify this query: {last_message.content}")
@@ -151,6 +151,7 @@ def classify_query(state: GraphState):
     
     print(f">>> Classification result: {state['query_type']}")
     return state
+
 
 
 
