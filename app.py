@@ -10,7 +10,7 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver  # Updated for 0.5.4
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
 import os
 import json
@@ -106,8 +106,7 @@ class GraphState(TypedDict):
     user_summary: str  # Key facts about the user
     last_tool_results: List[str]
 
-# Initialize checkpoint system
-memory = SqliteSaver.from_conn_string(f"sqlite:///{DB_FILE}")
+memory = MemorySaver()
 
 # --- Classifier Node ---
 def classify_query(state: GraphState):
@@ -316,25 +315,9 @@ def build_workflow():
     # Compile with checkpointing
     return workflow.compile(checkpointer=memory)
 
-# --- Initialize Database ---
-def init_database():
-    """Initialize the SQLite database for conversation memory"""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            session_id TEXT PRIMARY KEY,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    conn.commit()
-    conn.close()
 
 # --- Streamlit UI ---
 def main():
-    # Initialize database
-    init_database()
-    
     # Load data and tools
     df = load_dataset_to_df()
     handler = ToolHandler(df)
