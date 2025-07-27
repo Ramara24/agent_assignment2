@@ -213,7 +213,7 @@ def build_workflow():
     workflow = StateGraph(GraphState)
 
     # Add all nodes
-    workflow.add_node("classify", classify_query,return_dict=False)
+    workflow.add_node("classify", classify_query)
     workflow.add_node("structured_agent", structured_agent)
     workflow.add_node("unstructured_agent", unstructured_agent)
     workflow.add_node("out_of_scope", out_of_scope_handler)
