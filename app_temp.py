@@ -29,10 +29,86 @@ def load_dataset_to_df() -> pd.DataFrame:
     return df[['instruction', 'response', 'category', 'intent']].dropna()
 
 def make_tools(df: pd.DataFrame):
-    # Existing tool definitions remain the same
-    # ... (all tool definitions unchanged) ...
+    @tool
+    def get_all_categories() -> List[str]:
+        """Return all unique categories in the dataset."""
+        return sorted(df['category'].unique().tolist())
+
+    @tool
+    def get_all_intents() -> List[str]:
+        """Return all unique intents in the dataset."""
+        return sorted(df['intent'].unique().tolist())
+
+    @tool
+    def count_category(category: str) -> int:
+        """Counts the number of examples in each category and returns the result."""
+        return len(df[df['category'] == category.upper()])
+
+    @tool
+    def count_intent(intent: str) -> int:
+        """Counts the number of examples in each intent and returns the result."""
+        return len(df[df['intent'] == intent.lower()])
+
+    @tool
+    def get_intent_distribution() -> Dict[str, int]:
+        """Show intent distributions."""
+        return df['intent'].value_counts().to_dict()
+
+    @tool
+    def get_top_categories(n: int = 5) -> List[str]:
+        """Return the top N most frequent categories."""
+        return df['category'].value_counts().head(n).index.tolist()
+
+    @tool
+    def show_examples(n: int, category: Optional[str] = None, intent: Optional[str] = None) -> str:
+        """
+        Show up to `n` random conversation examples from the dataset, optionally filtered by category and/or intent.
+        Args:
+            n: Number of examples to show.
+            category: Optional category to filter examples (case-insensitive).
+            intent: Optional intent to filter examples (case-insensitive).
+        Returns:
+            A markdown-formatted string with the selected customer-agent examples.
+        """
+        filtered = df.copy()
+        if category:
+            filtered = filtered[filtered['category'] == category.upper()]
+        if intent:
+            filtered = filtered[filtered['intent'] == intent.lower()]
+        n = min(n, len(filtered))
+        examples = filtered.sample(n).to_dict('records')
+        return "\n\n".join(
+            f"**Example {i+1}**\n**Customer**: {e['instruction']}\n**Agent**: {e['response']}"
+            for i, e in enumerate(examples)
+        )
+
+    @tool
+    def summarize(topic: str) -> str:
+        """
+        Provide a brief summary by sampling up to 5 examples from a given category or intent.
+
+        Args:
+            topic: A category (uppercase) or intent (lowercase) to summarize.
+
+        Returns:
+            A text snippet showing customer-agent interactions for the selected topic.
+        """
+        filtered = df.copy()
+        if topic.upper() in df['category'].unique():
+            filtered = filtered[filtered['category'] == topic.upper()]
+        elif topic.lower() in df['intent'].unique():
+            filtered = filtered[filtered['intent'] == topic.lower()]
+        examples = filtered.sample(min(5, len(filtered))).to_dict('records')
+        text_examples = "\n\n".join(
+            f"Customer: {e['instruction']}\nAgent: {e['response']}"
+            for e in examples
+        )
+        llm = ChatOpenAI(model=MODEL_NAME, temperature=0.7, api_key=OPENAI_API_KEY)
+        response = llm.invoke(f"Summarize key patterns from these customer service examples about {topic}:\n\n{text_examples}")
+        return response.content
 
     return [get_all_categories, get_all_intents, get_intent_distribution, count_category, count_intent, get_top_categories, show_examples, summarize]
+
 
 class GraphState(TypedDict):
     values: Dict[str, Any]
@@ -64,8 +140,48 @@ def classify_query(state: GraphState):
             state["query_type"] = "structured"
             return state
     
-    # Existing classification logic
-    # ... (rest of classification logic unchanged) ...
+    if "summarize" in content:
+        state["query_type"] = "unstructured"
+        return state
+        
+    # Then check for structured patterns
+    structured_keywords = [
+        "frequent", "examples", "categories", "distributions", 
+        "count", "show", "what", "how many", "list", "intent"
+    ]
+    if any(keyword in content for keyword in structured_keywords):
+        state["query_type"] = "structured"
+        return state
+    
+    # If no patterns match, use LLM for classification
+    system = """
+    Classify the user query into one of:
+    - structured: Questions about counts, distributions, or specific examples
+    - unstructured: Requests for summaries
+    - out_of_scope: Anything else
+    
+    Examples:
+    - "What are the most frequent categories?" → structured
+    - "Show examples of Category X" → structured
+    - "Summarize Category X" → unstructured
+    - "Who is Magnus Carlson?" → out_of_scope
+    """
+    
+    messages = [
+        SystemMessage(content=system),
+        HumanMessage(content=f"Classify this query: {last_message.content}")
+    ]
+    
+    response = llm.invoke(messages)
+    classification = response.content.lower().strip()
+    
+    # Set query_type based on classification
+    if "structured" in classification:
+        state["query_type"] = "structured"
+    elif "unstructured" in classification:
+        state["query_type"] = "unstructured"
+    else:
+        state["query_type"] = "out_of_scope"
     
     print(f">>> Classification result: {state['query_type']}")
     return state
@@ -229,7 +345,45 @@ def update_summary_memory(state: GraphState, config: RunnableConfig):
     return state
 
 def build_workflow():
-    # ... (unchanged from your original) ...
+    workflow = StateGraph(GraphState)
+
+    # Add all nodes
+    workflow.add_node("classify", classify_query)
+    workflow.add_node("structured_agent", structured_agent)
+    workflow.add_node("unstructured_agent", unstructured_agent)
+    workflow.add_node("out_of_scope", out_of_scope_handler)
+    workflow.add_node("update_memory", update_summary_memory)
+    workflow.add_node("generate_final_response", generate_final_response)
+
+    # Set entry point and explicitly add START edge
+    workflow.set_entry_point("classify")
+    workflow.add_edge(START, "classify") 
+    
+    def route_from_classify(state: dict) -> str:
+        # Access query_type directly from the state dictionary
+        if "query_type" not in state:
+            print("⚠️ Warning: query_type not found! Defaulting to out_of_scope")
+            return "out_of_scope"
+        print(f">>> Routing to: {state['query_type']}")
+        return state["query_type"]
+
+    # Add conditional branching
+    workflow.add_conditional_edges(
+        "classify",
+        route_from_classify,
+        {
+            "structured": "structured_agent",
+            "unstructured": "unstructured_agent",
+            "out_of_scope": "generate_final_response",
+        }
+    )
+
+    # Transitions
+    workflow.add_edge("structured_agent", "update_memory")
+    workflow.add_edge("unstructured_agent", "update_memory")
+    workflow.add_edge("update_memory", "generate_final_response")
+    workflow.add_edge("generate_final_response", END)
+
     return workflow.compile(checkpointer=memory)
 
 def main():
