@@ -1,9 +1,9 @@
 import streamlit as st
 from datasets import load_dataset
 import pandas as pd
-from typing import List, Optional
+from typing import TypedDict, Dict, Any, Tuple, List, Optional
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage 
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import tool
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
@@ -108,13 +108,16 @@ def make_tools(df: pd.DataFrame):
 
     return [get_all_categories, get_all_intents, get_intent_distribution, count_category, count_intent, get_top_categories, show_examples, summarize]
 
-class GraphState(dict):
+class GraphState(TypedDict):
+    values: Dict[str, Any]  # Required by LangGraph
+    next: Tuple[str]  # Required by LangGraph
     messages: List[BaseMessage]
     session_id: str
     user_summary: str
     last_tool_results: List[str]
     final_response: str
     thread_id: str
+    query_type: Optional[str]
 
 def classify_query(state: GraphState):
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
@@ -445,26 +448,34 @@ def main():
                 "thread_id": session_id,
                 "checkpoint_ns": "main"  # Add checkpoint namespace
             })
-            
-            # TRY TO RESTORE PREVIOUS STATE OR CREATE NEW
+                        
             try:
-                # Get previous state from memory
                 current_state = memory.get(config)
                 if not current_state:
                     raise KeyError("No previous state")
-                    
+                
                 # Append new message to existing conversation
                 current_state["messages"].append(HumanMessage(content=prompt))
+                
+                # Maintain required LangGraph fields
+                if "values" not in current_state:
+                    current_state["values"] = {}
+                if "next" not in current_state:
+                    current_state["next"] = ("classify",)
+                    
             except (KeyError, TypeError):
-                # Initialize new state if no previous exists
+                # Initialize new state
                 current_state = {
+                    "values": {},
+                    "next": ("classify",),
                     "messages": [HumanMessage(content=prompt)],
                     "session_id": session_id,
                     "last_tool_results": [],
                     "user_summary": "",
-                    "query_type": None  
+                    "query_type": None,
+                    "thread_id": session_id,
+                    "final_response": ""
                 }
-            
             # PROCESS UPDATED STATE
             for step in workflow.stream(current_state, config):
                 print(">>> Step output:", step, flush=True)
@@ -476,8 +487,7 @@ def main():
                     print(f"FINAL RESPONSE TO DISPLAY: {response}")
                     st.chat_message("assistant").markdown(response)
                     
-                    # SAVE UPDATED STATE AFTER PROCESSING
-                    memory.put(config, final_state, None, False)
+
 
 if __name__ == "__main__":
     main()
