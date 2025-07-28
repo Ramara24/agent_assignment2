@@ -265,10 +265,10 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                     state["last_intent"] = args["intent"]
             print(f"after")
                 
-                # Increase count for "more examples" requests
-                if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
-                    args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
-                    print(f"Increased examples to: {args['n']}")
+            # Increase count for "more examples" requests
+            if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
+                args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
+                print(f"Increased examples to: {args['n']}")
             
             result = tool_func.invoke(args)
 
