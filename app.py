@@ -417,7 +417,10 @@ def main():
     st.sidebar.write(f"Active Session: `{session_id}`")
     
     if st.sidebar.button("Show My Memory"):
-        config = RunnableConfig(configurable={"thread_id": session_id})
+        config = RunnableConfig(configurable={
+            "thread_id": session_id,
+            "checkpoint_ns": "main"  # Add checkpoint namespace
+        })
         try:
             state = memory.get(config)
             if state and "user_summary" in state:
@@ -436,7 +439,12 @@ def main():
         st.chat_message("user").markdown(prompt)
         
         with st.spinner("Analyzing..."):
-            config = RunnableConfig(configurable={"tools": tools, "thread_id": session_id})
+            # Create config with checkpoint namespace
+            config = RunnableConfig(configurable={
+                "tools": tools,
+                "thread_id": session_id,
+                "checkpoint_ns": "main"  # Add checkpoint namespace
+            })
             
             # TRY TO RESTORE PREVIOUS STATE OR CREATE NEW
             try:
