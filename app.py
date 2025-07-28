@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph, END, START
 from typing import Dict
 import uuid
 import operator
+import re
 
 MODEL_NAME = "gpt-3.5-turbo"
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -108,9 +109,10 @@ def make_tools(df: pd.DataFrame):
 
     return [get_all_categories, get_all_intents, get_intent_distribution, count_category, count_intent, get_top_categories, show_examples, summarize]
 
+
 class GraphState(TypedDict):
-    values: Dict[str, Any]  # Required by LangGraph
-    next: Tuple[str]  # Required by LangGraph
+    values: Dict[str, Any]
+    next: Tuple[str]
     messages: List[BaseMessage]
     session_id: str
     user_summary: str
@@ -118,11 +120,12 @@ class GraphState(TypedDict):
     final_response: str
     thread_id: str
     query_type: Optional[str]
+    last_category: Optional[str]  # New: track last used category for follow-ups
+    last_intent: Optional[str]    # New: track last used intent for follow-ups
 
 def classify_query(state: GraphState):
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     
-    # Get all human messages
     human_messages = [msg for msg in state["messages"] if isinstance(msg, HumanMessage)]
     if not human_messages:
         state["query_type"] = "out_of_scope"
@@ -131,7 +134,12 @@ def classify_query(state: GraphState):
     last_message = human_messages[-1]
     content = last_message.content.lower()
     
-    # First, check for unstructured patterns
+    # Handle follow-up patterns
+    if re.search(r"\b(more|another|additional)\b", content):
+        if state.get("last_category") or state.get("last_intent"):
+            state["query_type"] = "structured"
+            return state
+    
     if "summarize" in content:
         state["query_type"] = "unstructured"
         return state
@@ -178,31 +186,8 @@ def classify_query(state: GraphState):
     print(f">>> Classification result: {state['query_type']}")
     return state
 
-
-    
-def generate_final_response_temp(state: GraphState): 
-    """Generate the final assistant response from messages or tool results."""
-    if state.get("last_tool_results"):
-        result = state["last_tool_results"][-1]
-        if isinstance(result, list):
-            content = "The most frequent categories are: " + ", ".join(result)
-        elif isinstance(result, dict):
-            # Format dicts (e.g., intent distribution)
-            lines = [f"{k}: {v}" for k, v in result.items()]
-            content = "Intent Distribution:\n\n" + "\n".join(lines)
-        else:
-            content = str(result)
-    else:
-        last_ai = next((m for m in reversed(state["messages"]) if isinstance(m, AIMessage)), None)
-        content = last_ai.content if last_ai else "No response generated."
-
-    state["final_response"] = content
-    state["messages"].append(AIMessage(content=content))
-    return state
-
 def generate_final_response(state: GraphState): 
-    """Generate the final assistant response from messages or tool results."""
-    # Handle out-of-scope queries specifically
+    # Handle out-of-scope queries
     if state.get("query_type") == "out_of_scope":
         content = "I can only answer questions about customer service data. Please ask about the dataset, categories, intents, or summaries."
     
@@ -223,36 +208,6 @@ def generate_final_response(state: GraphState):
     state["final_response"] = content
     state["messages"].append(AIMessage(content=content))
     return state
-
-def structured_agent_temp(state: GraphState, config: RunnableConfig):
-    print(">>> Entered structured_agent", flush=True)
-    print("State:", state, flush=True)
-    tools = config.get("configurable", {}).get("tools", [])
-    if not tools:
-        state["messages"].append(AIMessage(content="System error: tools not found"))
-        return state
-    llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
-    llm_with_tools = llm.bind_tools(tools)
-    response = llm_with_tools.invoke(state["messages"])
-    tool_calls = response.tool_calls
-    results = []
-    for tool_call in tool_calls:
-        tool_name = tool_call["name"]
-        args = tool_call["args"]
-        try:
-            tool_func = next(t for t in tools if t.name == tool_name)
-            print(f"Invoking tool: {tool_name} with args {args}", flush=True)
-            result = tool_func.invoke(args)
-            print(f"Tool result: {result}", flush=True)
-            results.append(result)
-            state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
-        except StopIteration:
-            state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
-    state["last_tool_results"] = results
-    return state
-
-def unstructured_agent_temp(state: GraphState, config: RunnableConfig):
-    return structured_agent(state, config)
 
 def structured_agent(state: GraphState, config: RunnableConfig):
     print(">>> Entered structured_agent", flush=True)
@@ -287,8 +242,32 @@ def structured_agent(state: GraphState, config: RunnableConfig):
         try:
             tool_func = next(t for t in structured_tools if t.name == tool_name)
             print(f"Invoking tool: {tool_name} with args {args}", flush=True)
+            
+            # Handle follow-up queries for examples
+            if tool_name == "show_examples":
+                # Use context from previous queries
+                if "category" not in args and state.get("last_category"):
+                    args["category"] = state["last_category"]
+                    print(f"Using context category: {state['last_category']}")
+                if "intent" not in args and state.get("last_intent"):
+                    args["intent"] = state["last_intent"]
+                    print(f"Using context intent: {state['last_intent']}")
+                
+                # Increase count for "more examples" requests
+                if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
+                    args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
+                    print(f"Increased examples to: {args['n']}")
+            
             result = tool_func.invoke(args)
             print(f"Tool result: {result}", flush=True)
+            
+            # Store context for follow-ups
+            if tool_name == "show_examples":
+                if "category" in args:
+                    state["last_category"] = args["category"]
+                if "intent" in args:
+                    state["last_intent"] = args["intent"]
+            
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
         except StopIteration:
@@ -340,14 +319,21 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
     
     state["last_tool_results"] = results
     return state
-    
+
 def out_of_scope_handler(state: GraphState):
     state["messages"].append(AIMessage(content="I can only answer questions about customer service data."))
     return state
 
 def update_summary_memory(state: GraphState, config: RunnableConfig):
+    # Keep conversation window manageable
+    state["messages"] = state["messages"][-10:]
+    
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
-    conversation = "\n".join(f"{msg.type}: {msg.content}" for msg in state["messages"] if isinstance(msg, (HumanMessage, AIMessage)))
+    conversation = "\n".join(
+        f"{msg.type}: {msg.content}" 
+        for msg in state["messages"] 
+        if isinstance(msg, (HumanMessage, AIMessage))
+    )
     prompt = f"""
     Extract key facts about the user. Limit to {SUMMARY_MEMORY_LIMIT} items.
     Current Summary: {state.get('user_summary', '')}
@@ -422,13 +408,17 @@ def main():
     if st.sidebar.button("Show My Memory"):
         config = RunnableConfig(configurable={
             "thread_id": session_id,
-            "checkpoint_ns": "main"  # Add checkpoint namespace
+            "checkpoint_ns": "main"
         })
         try:
             state = memory.get(config)
             if state and "user_summary" in state:
                 st.sidebar.subheader("Your Memory Summary")
                 st.sidebar.markdown(state["user_summary"])
+                if "last_category" in state:
+                    st.sidebar.write(f"Last category: {state['last_category']}")
+                if "last_intent" in state:
+                    st.sidebar.write(f"Last intent: {state['last_intent']}")
             else:
                 st.sidebar.info("No memory stored yet")
         except Exception:
@@ -442,52 +432,59 @@ def main():
         st.chat_message("user").markdown(prompt)
         
         with st.spinner("Analyzing..."):
-            # Create config with checkpoint namespace
             config = RunnableConfig(configurable={
                 "tools": tools,
                 "thread_id": session_id,
-                "checkpoint_ns": "main"  # Add checkpoint namespace
+                "checkpoint_ns": "main"
             })
-                        
+            
+            # Initialize or retrieve state
             try:
                 current_state = memory.get(config)
                 if not current_state:
                     raise KeyError("No previous state")
-                
-                # Append new message to existing conversation
-                current_state["messages"].append(HumanMessage(content=prompt))
-                
-                # Maintain required LangGraph fields
-                if "values" not in current_state:
-                    current_state["values"] = {}
-                if "next" not in current_state:
-                    current_state["next"] = ("classify",)
-                    
             except (KeyError, TypeError):
-                # Initialize new state
                 current_state = {
                     "values": {},
                     "next": ("classify",),
-                    "messages": [HumanMessage(content=prompt)],
+                    "messages": [],
                     "session_id": session_id,
                     "last_tool_results": [],
                     "user_summary": "",
                     "query_type": None,
                     "thread_id": session_id,
-                    "final_response": ""
+                    "final_response": "",
+                    "last_category": None,
+                    "last_intent": None
                 }
-            # PROCESS UPDATED STATE
-            for step in workflow.stream(current_state, config):
-                print(">>> Step output:", step, flush=True)
-                
-                if "generate_final_response" in step:
-                    final_state = step["generate_final_response"]
-                    response = final_state.get("final_response", "No response generated.")
-                    st.session_state.messages.append({"role": "assistant", "content": response})
-                    print(f"FINAL RESPONSE TO DISPLAY: {response}")
-                    st.chat_message("assistant").markdown(response)
-                    
-
+            
+            # Add new user message to state
+            current_state["messages"].append(HumanMessage(content=prompt))
+            
+            # Reset next node to start workflow from beginning
+            current_state["next"] = ("classify",)
+            
+            # Process workflow
+            final_response = None
+            for output in workflow.stream(current_state, config):
+                for node, state in output.items():
+                    if node == "generate_final_response":
+                        final_response = state.get("final_response")
+            
+            # Display response
+            if final_response:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+                st.chat_message("assistant").markdown(final_response)
+            else:
+                error_msg = "No response generated. Please try again."
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+                st.chat_message("assistant").markdown(error_msg)
 
 if __name__ == "__main__":
     main()
