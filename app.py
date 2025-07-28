@@ -264,6 +264,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             
             # Store context for follow-ups
             if tool_name == "show_examples":
+                print(f" REEM : {args}")
                 if "category" in args:
                     state["last_category"] = args["category"]
                 if "intent" in args:
