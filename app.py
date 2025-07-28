@@ -469,7 +469,7 @@ def main():
                     st.chat_message("assistant").markdown(response)
                     
                     # SAVE UPDATED STATE AFTER PROCESSING
-                    memory.put(config, final_state)
+                    memory.put(config, final_state, None, False)
 
 if __name__ == "__main__":
     main()
