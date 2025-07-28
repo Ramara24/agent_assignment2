@@ -261,7 +261,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             
             result = tool_func.invoke(args)
             print(f"Tool result: {result}", flush=True)
-            
+            print(f"before")
             # Store context for follow-ups
             if tool_name == "show_examples":
                 print(f" REEM : {args}")
@@ -269,6 +269,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                     state["last_category"] = args["category"]
                 if "intent" in args:
                     state["last_intent"] = args["intent"]
+            print(f"after")
             
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
@@ -276,6 +277,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
     
     state["last_tool_results"] = results
+    print(" we got here")
     return state
 
 def unstructured_agent(state: GraphState, config: RunnableConfig):
