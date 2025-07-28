@@ -350,6 +350,11 @@ def update_summary_memory(state: GraphState, config: RunnableConfig):
     state["user_summary"] = new_summary
     return state
 
+def store_context(state: GraphState, config: RunnableConfig):
+    print(f"✅ Storing context: category={state.get('last_category')}, intent={state.get('last_intent')}")
+    return state
+
+
 def build_workflow():
     workflow = StateGraph(GraphState)
 
@@ -359,6 +364,7 @@ def build_workflow():
     workflow.add_node("unstructured_agent", unstructured_agent)
     workflow.add_node("out_of_scope", out_of_scope_handler)
     workflow.add_node("update_memory", update_summary_memory)
+    workflow.add_node("store_context", store_context)
     workflow.add_node("generate_final_response", generate_final_response)
 
     # Set entry point and explicitly add START edge
@@ -385,7 +391,8 @@ def build_workflow():
     )
 
     # Transitions
-    workflow.add_edge("structured_agent", "update_memory")
+    workflow.add_edge("structured_agent", "store_context")
+    workflow.add_edge("store_context", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
     workflow.add_edge("update_memory", "generate_final_response")
     workflow.add_edge("generate_final_response", END)
