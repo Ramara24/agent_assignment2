@@ -245,7 +245,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             
             # Handle follow-up queries for examples
             if tool_name == "show_examples":
-                print(f"reem category : {args["category"]} last : {state["last_category"]}")
+                print(f"reem2 args : {args}")
                 # Use context from previous queries
                 if "category" not in args and state.get("last_category"):
                     args["category"] = state["last_category"]
