@@ -277,7 +277,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
     
     state["last_tool_results"] = results
-    print(" we got here")
+    print(f" we got here")
     return state
 
 def unstructured_agent(state: GraphState, config: RunnableConfig):
