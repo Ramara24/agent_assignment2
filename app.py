@@ -114,6 +114,7 @@ class GraphState(dict):
     user_summary: str
     last_tool_results: List[str]
     final_response: str
+    thread_id: str
 
 def classify_query(state: GraphState):
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
@@ -435,18 +436,29 @@ def main():
         st.chat_message("user").markdown(prompt)
         
         with st.spinner("Analyzing..."):
-            initial_state = {
-                "messages": [HumanMessage(content=prompt)],
-                "session_id": session_id,
-                "last_tool_results": [],
-                "user_summary": "",
-                # Initialize query_type to avoid KeyError
-                "query_type": None  
-            }
-            
             config = RunnableConfig(configurable={"tools": tools, "thread_id": session_id})
             
-            for step in workflow.stream(initial_state, config):
+            # TRY TO RESTORE PREVIOUS STATE OR CREATE NEW
+            try:
+                # Get previous state from memory
+                current_state = memory.get(config)
+                if not current_state:
+                    raise KeyError("No previous state")
+                    
+                # Append new message to existing conversation
+                current_state["messages"].append(HumanMessage(content=prompt))
+            except (KeyError, TypeError):
+                # Initialize new state if no previous exists
+                current_state = {
+                    "messages": [HumanMessage(content=prompt)],
+                    "session_id": session_id,
+                    "last_tool_results": [],
+                    "user_summary": "",
+                    "query_type": None  
+                }
+            
+            # PROCESS UPDATED STATE
+            for step in workflow.stream(current_state, config):
                 print(">>> Step output:", step, flush=True)
                 
                 if "generate_final_response" in step:
@@ -455,6 +467,9 @@ def main():
                     st.session_state.messages.append({"role": "assistant", "content": response})
                     print(f"FINAL RESPONSE TO DISPLAY: {response}")
                     st.chat_message("assistant").markdown(response)
+                    
+                    # SAVE UPDATED STATE AFTER PROCESSING
+                    memory.put(config, final_state)
 
 if __name__ == "__main__":
     main()
