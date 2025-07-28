@@ -253,13 +253,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 if "intent" not in args and state.get("last_intent"):
                     args["intent"] = state["last_intent"]
                     print(f"Using context intent: {state['last_intent']}")
-                
-                # Increase count for "more examples" requests
-                if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
-                    args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
-                    print(f"Increased examples to: {args['n']}")
-            
-            result = tool_func.invoke(args)
+
             print(f"Tool result: {result}", flush=True)
             print(f"before")
             # Store context for follow-ups
@@ -270,6 +264,14 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 if "intent" in args:
                     state["last_intent"] = args["intent"]
             print(f"after")
+                
+                # Increase count for "more examples" requests
+                if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
+                    args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
+                    print(f"Increased examples to: {args['n']}")
+            
+            result = tool_func.invoke(args)
+
             
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
