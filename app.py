@@ -486,9 +486,6 @@ def main():
                     if node == "generate_final_response":
                         final_response = state.get("final_response")
             
-            # ✅ Persist updated state to memory
-            if final_state:
-                memory.set(config, final_state)
             
             # Display response
             if final_response:
