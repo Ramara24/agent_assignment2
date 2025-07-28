@@ -479,10 +479,16 @@ def main():
             
             # Process workflow
             final_response = None
+            final_state = None
             for output in workflow.stream(current_state, config):
                 for node, state in output.items():
+                    final_state = state  # Track the last updated state
                     if node == "generate_final_response":
                         final_response = state.get("final_response")
+            
+            # ✅ Persist updated state to memory
+            if final_state:
+                memory.set(config, final_state)
             
             # Display response
             if final_response:
