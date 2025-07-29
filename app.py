@@ -258,7 +258,7 @@ def classify_query(state: GraphState):
     # Then check for structured patterns
     structured_keywords = [
         "frequent", "examples", "categories", "distributions", 
-        "count", "show", "what", "how many", "list", "intent"
+        "count", "show", "how many", "list", "intent"
     ]
     if any(keyword in content for keyword in structured_keywords):
         state["query_type"] = "structured"
