@@ -218,8 +218,20 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 
     # Filter tools for structured queries
     structured_tools = [t for t in tools if t.name != "summarize"]
-
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
+
+    # Detect if this is a follow-up query
+    last_user_msg = state["messages"][-1].content.lower()
+    is_follow_up = bool(re.search(r"\b(more|another|additional)\b", last_user_msg))
+
+    # Inject prior context if needed
+    if is_follow_up and (state.get("last_category") or state.get("last_intent")):
+        hint = "Context reminder: "
+        if state.get("last_category"):
+            hint += f"previous category was {state['last_category']}. "
+        if state.get("last_intent"):
+            hint += f"previous intent was {state['last_intent']}."
+        state["messages"].append(HumanMessage(content=hint))
 
     # Add system prompt for structured queries
     structured_prompt = SystemMessage(
@@ -227,10 +239,9 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 "Answer structured questions about categories, intents, and examples. "
                 "Use available tools to get precise data."
     )
-
-    # Create new messages with system prompt
     messages = [structured_prompt] + state["messages"]
 
+    # Bind tools and invoke LLM with tool call
     llm_with_tools = llm.bind_tools(structured_tools)
     response = llm_with_tools.invoke(messages)
     tool_calls = response.tool_calls
@@ -243,11 +254,8 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             tool_func = next(t for t in structured_tools if t.name == tool_name)
             print(f"Invoking tool: {tool_name} with args {args}", flush=True)
 
-            # Handle follow-up context for show_examples
+            # Patch missing follow-up context before execution
             if tool_name == "show_examples":
-                print(f"👀 raw args: {args}")
-
-                # Use previous context if not explicitly provided
                 if not args.get("category") and state.get("last_category"):
                     args["category"] = state["last_category"]
                     print(f"✅ Using fallback category: {state['last_category']}")
@@ -255,27 +263,23 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                     args["intent"] = state["last_intent"]
                     print(f"✅ Using fallback intent: {state['last_intent']}")
 
+                # Optional: increase count on follow-up
+                if is_follow_up:
+                    args["n"] = min(args.get("n", 3) + 2, 10)
+                    print(f"⬆️ Increased example count to: {args['n']}")
+
             # Log before storing
             print(f"📦 before storing context: {args}", flush=True)
 
-            # Store context only if values are not None
+            # Store new context
             if tool_name == "show_examples":
-                category = args.get("category")
-                if category is not None:
-                    state["last_category"] = category
-                intent = args.get("intent")
-                if intent is not None:
-                    state["last_intent"] = intent
+                if "category" in args:
+                    state["last_category"] = args["category"]
+                if "intent" in args:
+                    state["last_intent"] = args["intent"]
                 print(f"✅ Stored context: category={state.get('last_category')}, intent={state.get('last_intent')}", flush=True)
 
-            # Detect follow-up: "more", "another", "additional"
-            if tool_name == "show_examples":
-                last_user_msg = state["messages"][-1].content.lower()
-                if re.search(r"\b(more|another|additional)\b", last_user_msg):
-                    args["n"] = min(args.get("n", 3) + 2, 10)
-                    print(f"⬆️ Increased example count to: {args['n']}", flush=True)
-
-            # Invoke tool
+            # Run the tool
             result = tool_func.invoke(args)
             print(f"🛠️ Tool result: {result}", flush=True)
 
@@ -287,6 +291,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     state["last_tool_results"] = results
     print(f"✅ Finished structured_agent", flush=True)
     return state
+
 
 
 def unstructured_agent(state: GraphState, config: RunnableConfig):
