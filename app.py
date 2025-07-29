@@ -146,6 +146,12 @@ def classify_query(state: GraphState):
     last_message = human_messages[-1]
     content = last_message.content.lower()
     
+    # NEW: Handle memory queries first
+    memory_keywords = ["remember", "memory", "recall", "what do you know about me", "summarize our conversation"]
+    if any(keyword in content for keyword in memory_keywords):
+        state["query_type"] = "memory"
+        return state
+    
     # Handle follow-up patterns
     if re.search(r"\b(more|another|additional)\b", content):
         if state.get("last_category") or state.get("last_intent"):
@@ -168,11 +174,13 @@ def classify_query(state: GraphState):
     # If no patterns match, use LLM for classification
     system = """
     Classify the user query into one of:
+    - memory: Questions about what you remember or know about the user
     - structured: Questions about counts, distributions, or specific examples
     - unstructured: Requests for summaries
     - out_of_scope: Anything else
     
     Examples:
+    - "What do you remember about me?" → memory
     - "What are the most frequent categories?" → structured
     - "Show examples of Category X" → structured
     - "Summarize Category X" → unstructured
@@ -188,7 +196,9 @@ def classify_query(state: GraphState):
     classification = response.content.lower().strip()
     
     # Set query_type based on classification
-    if "structured" in classification:
+    if "memory" in classification:
+        state["query_type"] = "memory"
+    elif "structured" in classification:
         state["query_type"] = "structured"
     elif "unstructured" in classification:
         state["query_type"] = "unstructured"
@@ -198,6 +208,79 @@ def classify_query(state: GraphState):
     print(f">>> Classification result: {state['query_type']}")
     return state
 
+# 2. Create a dedicated memory agent
+def memory_agent(state: GraphState, config: RunnableConfig):
+    print(">>> Entered memory_agent", flush=True)
+    
+    # Get current summary
+    current_summary = state.get("user_summary", "No previous interactions recorded.")
+    
+    if not current_summary or current_summary.strip() == "":
+        response = "I don't have any specific information about you yet. As we continue our conversation about customer support data, I'll start remembering key details about your interests and preferences."
+    else:
+        response = f"Here's what I remember about you:\n\n{current_summary}"
+    
+    state["final_response"] = response
+    state["messages"].append(AIMessage(content=response))
+    return state
+
+# 3. Create a dedicated summary node that intelligently decides what to store
+def summary_node(state: GraphState, config: RunnableConfig):
+    print(">>> Entered summary_node", flush=True)
+    
+    llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
+    
+    # Get recent conversation (last 6 messages)
+    recent_messages = state["messages"][-6:]
+    conversation = "\n".join(
+        f"{msg.__class__.__name__}: {msg.content}" 
+        for msg in recent_messages 
+        if isinstance(msg, (HumanMessage, AIMessage))
+    )
+    
+    current_summary = state.get("user_summary", "")
+    
+    # Enhanced prompt for better memory extraction
+    prompt = f"""
+    You are a memory manager for a customer support data analyst chatbot. Your job is to extract and maintain key information about the user.
+
+    Current Summary: {current_summary if current_summary else "No previous information"}
+    
+    Recent Conversation:
+    {conversation}
+    
+    Instructions:
+    1. Extract key facts about the user's interests, preferences, and needs
+    2. Focus on patterns in their queries (what categories/intents they ask about most)
+    3. Note any specific use cases or business context they mention
+    4. Keep it concise - maximum {SUMMARY_MEMORY_LIMIT} key points
+    5. Update existing information rather than duplicate it
+    6. If no new meaningful information, return the current summary unchanged
+    
+    Examples of good memory items:
+    - "User frequently asks about ORDER category examples"
+    - "Interested in customer service training data"
+    - "Working on chatbot development project"
+    - "Prefers detailed examples over summaries"
+    
+    Updated Summary (or "NO_UPDATE" if no new information):
+    """
+    
+    try:
+        response = llm.invoke(prompt)
+        new_summary = response.content.strip()
+        
+        if new_summary != "NO_UPDATE" and new_summary != current_summary:
+            state["user_summary"] = new_summary
+            print(f"📝 Updated user summary: {new_summary}")
+        else:
+            print("📝 No summary update needed")
+            
+    except Exception as e:
+        print(f"❌ Error updating summary: {e}")
+    
+    return state
+    
 def generate_final_response(state: GraphState): 
     # Handle out-of-scope queries
     if state.get("query_type") == "out_of_scope":
@@ -394,46 +477,80 @@ def store_context(state: GraphState, config: RunnableConfig):
 def build_workflow(memory):
     workflow = StateGraph(GraphState)
 
-    # Add all nodes
+    # Add all nodes including the new ones
     workflow.add_node("classify", classify_query)
     workflow.add_node("structured_agent", structured_agent)
     workflow.add_node("unstructured_agent", unstructured_agent)
+    workflow.add_node("memory_agent", memory_agent)  # NEW
     workflow.add_node("out_of_scope", out_of_scope_handler)
-    workflow.add_node("update_memory", update_summary_memory)
+    workflow.add_node("summary_node", summary_node)  # NEW - replaces update_memory
     workflow.add_node("store_context", store_context)
     workflow.add_node("generate_final_response", generate_final_response)
 
-    # Set entry point and explicitly add START edge
+    # Set entry point
     workflow.set_entry_point("classify")
     workflow.add_edge(START, "classify") 
     
     def route_from_classify(state: dict) -> str:
-        # Access query_type directly from the state dictionary
         if "query_type" not in state:
             print("⚠️ Warning: query_type not found! Defaulting to out_of_scope")
             return "out_of_scope"
         print(f">>> Routing to: {state['query_type']}")
         return state["query_type"]
 
-    # Add conditional branching
+    # Updated conditional branching to include memory
     workflow.add_conditional_edges(
         "classify",
         route_from_classify,
         {
             "structured": "structured_agent",
             "unstructured": "unstructured_agent",
+            "memory": "memory_agent",  # NEW
             "out_of_scope": "generate_final_response",
         }
     )
 
-    # Transitions
+    # Updated transitions
     workflow.add_edge("structured_agent", "store_context")
-    workflow.add_edge("store_context", "update_memory")
-    workflow.add_edge("unstructured_agent", "update_memory")
-    workflow.add_edge("update_memory", "generate_final_response")
+    workflow.add_edge("store_context", "summary_node")  # Changed from update_memory
+    workflow.add_edge("unstructured_agent", "summary_node")  # Changed from update_memory
+    workflow.add_edge("memory_agent", "END")  # Memory queries go directly to END
+    workflow.add_edge("summary_node", "generate_final_response")  # Changed from update_memory
     workflow.add_edge("generate_final_response", END)
 
     return workflow.compile(checkpointer=memory)
+
+# 5. Optional: Replace your memory button section with this enhanced version:
+
+if st.sidebar.button("Show My Memory"):
+    config = RunnableConfig(configurable={
+        "thread_id": session_id,
+    })
+    try:
+        checkpoint = workflow.get_state(config)
+        if checkpoint and checkpoint.values:
+            state = checkpoint.values
+            st.sidebar.subheader("🧠 Your Memory Summary")
+            
+            summary = state.get("user_summary", "No information stored yet")
+            if summary and summary.strip():
+                st.sidebar.markdown(summary)
+                
+                # Show additional context
+                if state.get("last_category"):
+                    st.sidebar.write(f"🔖 Last category: **{state['last_category']}**")
+                if state.get("last_intent"):
+                    st.sidebar.write(f"🎯 Last intent: **{state['last_intent']}**")
+                    
+                # Show conversation stats
+                msg_count = len(state.get("messages", []))
+                st.sidebar.write(f"💬 Messages exchanged: {msg_count}")
+            else:
+                st.sidebar.info("Start asking questions to build your memory profile!")
+        else:
+            st.sidebar.info("No memory stored yet")
+    except Exception as e:
+        st.sidebar.warning(f"Couldn't retrieve memory: {e}")
 
 def main():
     df = load_dataset_to_df()
