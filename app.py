@@ -267,12 +267,13 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 
             # Patch missing follow-up context before execution
             if tool_name == "show_examples":
-                if not args.get("category") and state.get("last_category"):
+                if (not args.get("category") or args["category"] is None) and state.get("last_category"):
                     args["category"] = state["last_category"]
                     print(f"✅ Using fallback category: {state['last_category']}")
                 if not args.get("intent") and state.get("last_intent"):
                     args["intent"] = state["last_intent"]
                     print(f"✅ Using fallback intent: {state['last_intent']}")
+                print(f"🧪 Final args to show_examples: {args}")
 
                 # Optional: increase count on follow-up
                 if is_follow_up:
