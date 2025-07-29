@@ -61,6 +61,7 @@ def make_tools(df: pd.DataFrame):
 
     @tool
     def show_examples(n: int, category: Optional[str] = None, intent: Optional[str] = None) -> str:
+        print(f"🚨 INSIDE TOOL — category={category}, intent={intent}")
         """
         Show up to `n` random conversation examples from the dataset, optionally filtered by category and/or intent.
         Args:
