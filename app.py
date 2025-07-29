@@ -230,7 +230,17 @@ def classify_query(state: GraphState):
     content = last_message.content.lower()
     
     # NEW: Handle memory queries first
-    memory_keywords = ["remember", "memory", "recall", "what do you know about me", "summarize our conversation"]
+    memory_keywords = [
+        "remember", "remmeber", "remeber", "rember",  # Common typos of "remember"
+        "memory", "memorie", "memori",                 # Common typos of "memory"  
+        "recall", "recal", "recal",                    # Common typos of "recall"
+        "what do you know about me", 
+        "what do u know about me",                     # Text speak
+        "summarize our conversation",
+        "what have you learned about me",
+        "tell me about my preferences",
+        "what are my interests"
+    ]
     if any(keyword in content for keyword in memory_keywords):
         state["query_type"] = "memory"
         return state
