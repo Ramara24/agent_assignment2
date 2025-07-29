@@ -215,72 +215,72 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     if not tools:
         state["messages"].append(AIMessage(content="System error: tools not found"))
         return state
-    
+
     # Filter tools for structured queries
     structured_tools = [t for t in tools if t.name != "summarize"]
-    
+
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
-    
+
     # Add system prompt for structured queries
     structured_prompt = SystemMessage(
         content="You are a data analyst for customer support queries. "
                 "Answer structured questions about categories, intents, and examples. "
                 "Use available tools to get precise data."
     )
-    
-    # Create new messages with system prompt
+
     messages = [structured_prompt] + state["messages"]
-    
     llm_with_tools = llm.bind_tools(structured_tools)
     response = llm_with_tools.invoke(messages)
     tool_calls = response.tool_calls
     results = []
-    
+
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
+
         try:
             tool_func = next(t for t in structured_tools if t.name == tool_name)
             print(f"Invoking tool: {tool_name} with args {args}", flush=True)
-            
-            # Handle follow-up queries for examples
-            if tool_name == "show_examples":
-                print(f"reem2 args : {args}")
-                # Use context from previous queries
-                if "category" not in args and state.get("last_category"):
-                    args["category"] = state["last_category"]
-                    print(f"Using context category: {state['last_category']}")
-                if "intent" not in args and state.get("last_intent"):
-                    args["intent"] = state["last_intent"]
-                    print(f"Using context intent: {state['last_intent']}")
 
-
-            print(f"before")
-            # Store context for follow-ups
+            # ✅ Always backfill missing category/intent from state (for follow-ups)
             if tool_name == "show_examples":
-                print(f" REEM : {args}")
+                if "category" not in args or not args["category"]:
+                    if state.get("last_category"):
+                        args["category"] = state["last_category"]
+                        print(f"✅ Using fallback category: {args['category']}")
+                if "intent" not in args or not args["intent"]:
+                    if state.get("last_intent"):
+                        args["intent"] = state["last_intent"]
+                        print(f"✅ Using fallback intent: {args['intent']}")
+
+            print("before")
+
+            # ✅ Save context for future queries
+            if tool_name == "show_examples":
+                print(f"REEM : {args}")
                 if "category" in args:
                     state["last_category"] = args["category"]
                 if "intent" in args:
                     state["last_intent"] = args["intent"]
-            print(f"after")
-                
-            # Increase count for "more examples" requests
-            if re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
-                args["n"] = min(args.get("n", 3) + 2, 10)  # Show more examples
+            print("after")
+
+            # ✅ Handle "more examples" prompt
+            if tool_name == "show_examples" and re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
+                args["n"] = min(args.get("n", 3) + 2, 10)
                 print(f"Increased examples to: {args['n']}")
-            
+
             result = tool_func.invoke(args)
             print(f"Tool result: {result}", flush=True)
-            
+
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
         except StopIteration:
             state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
-    
+
     state["last_tool_results"] = results
-    print(f" we got here")
+    print("we got here")
     return state
+
 
 def unstructured_agent(state: GraphState, config: RunnableConfig):
     print(">>> Entered unstructured_agent", flush=True)
