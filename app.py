@@ -458,8 +458,7 @@ def main():
     # Fixed memory button
     if st.sidebar.button("Show My Memory"):
         config = RunnableConfig(configurable={
-            "thread_id": session_id,
-            "checkpoint_ns": "main"
+            "thread_id": session_id
         })
         try:
             checkpoint = workflow.get_state(config)
@@ -496,7 +495,6 @@ def main():
             config = RunnableConfig(configurable={
                 "tools": tools,
                 "thread_id": session_id,
-                "checkpoint_ns": "main"
             })
             
             print(f"📥 Loading state for thread_id: {session_id}")
