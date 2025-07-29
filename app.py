@@ -23,12 +23,12 @@ os.environ["LANGCHAIN_API_KEY"] = st.secrets["LANGCHAIN_API_KEY"]
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "CustomerSupportLangGraph"
 
-@st.singleton
-def get_memory():
+if "memory" not in st.session_state:
     from langgraph.checkpoint.memory import MemorySaver
-    return MemorySaver()
+    st.session_state.memory = MemorySaver()
 
-memory = get_memory()
+memory = st.session_state.memory
+
 
 
 @st.cache_data
