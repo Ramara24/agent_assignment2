@@ -5,7 +5,6 @@ from typing import TypedDict, Dict, Any, Tuple, List, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import tool
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import StateGraph, END, START
@@ -449,25 +448,6 @@ def out_of_scope_handler(state: GraphState):
     state["messages"].append(AIMessage(content="I can only answer questions about customer service data."))
     return state
 
-def update_summary_memory(state: GraphState, config: RunnableConfig):
-    # Keep conversation window manageable
-    state["messages"] = state["messages"][-10:]
-    
-    llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
-    conversation = "\n".join(
-        f"{msg.type}: {msg.content}" 
-        for msg in state["messages"] 
-        if isinstance(msg, (HumanMessage, AIMessage))
-    )
-    prompt = f"""
-    Extract key facts about the user. Limit to {SUMMARY_MEMORY_LIMIT} items.
-    Current Summary: {state.get('user_summary', '')}
-    Conversation: {conversation}
-    Updated Summary:
-    """
-    new_summary = llm.invoke(prompt).content
-    state["user_summary"] = new_summary
-    return state
 
 def store_context(state: GraphState, config: RunnableConfig):
     print(f"✅ Storing context: category={state.get('last_category')}, intent={state.get('last_intent')}")
@@ -510,11 +490,11 @@ def build_workflow(memory):
         }
     )
 
-    # Updated transitions
+    # Updated transitions - FIXED: memory_agent goes directly to END
     workflow.add_edge("structured_agent", "store_context")
     workflow.add_edge("store_context", "summary_node")  # Changed from update_memory
     workflow.add_edge("unstructured_agent", "summary_node")  # Changed from update_memory
-    workflow.add_edge("memory_agent", "END")  # Memory queries go directly to END
+    workflow.add_edge("memory_agent", END)  # Memory queries go directly to END
     workflow.add_edge("summary_node", "generate_final_response")  # Changed from update_memory
     workflow.add_edge("generate_final_response", END)
 
