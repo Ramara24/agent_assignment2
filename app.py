@@ -255,12 +255,12 @@ def structured_agent(state: GraphState, config: RunnableConfig):
 
             print("before")
 
-            # ✅ Save context for future queries
+            # ✅ Save context for future queries (but only if value is not None/empty)
             if tool_name == "show_examples":
                 print(f"REEM : {args}")
-                if "category" in args:
+                if args.get("category"):
                     state["last_category"] = args["category"]
-                if "intent" in args:
+                if args.get("intent"):
                     state["last_intent"] = args["intent"]
             print("after")
 
