@@ -13,6 +13,7 @@ from typing import Dict
 import uuid
 import operator
 import re
+import os
 
 MODEL_NAME = "gpt-3.5-turbo"
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
