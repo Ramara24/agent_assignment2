@@ -18,6 +18,9 @@ MODEL_NAME = "gpt-3.5-turbo"
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 DATASET_NAME = "bitext/Bitext-customer-support-llm-chatbot-training-dataset"
 SUMMARY_MEMORY_LIMIT = 3
+os.environ["LANGCHAIN_API_KEY"] = st.secrets["LANGCHAIN_API_KEY"]
+os.environ["LANGCHAIN_TRACING_V2"] = "true"
+os.environ["LANGCHAIN_PROJECT"] = "CustomerSupportLangGraph"
 memory = MemorySaver()
 
 @st.cache_data
