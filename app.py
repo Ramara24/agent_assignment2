@@ -391,7 +391,7 @@ def store_context(state: GraphState, config: RunnableConfig):
     return state
 
 
-def build_workflow():
+def build_workflow(memory):
     workflow = StateGraph(GraphState)
 
     # Add all nodes
@@ -438,7 +438,7 @@ def build_workflow():
 def main():
     df = load_dataset_to_df()
     tools = make_tools(df)
-    workflow = build_workflow()
+    workflow = build_workflow(memory)
     st.title("📊 Customer Support Data Analyst")
     
     if "session_id" not in st.session_state:
