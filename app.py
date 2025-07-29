@@ -483,7 +483,7 @@ def main():
             # Initialize or retrieve state
             try:
                 current_state = memory.get(config)
-                if not current_state:
+                if current_state is None:
                     raise KeyError("No previous state")
             except (KeyError, TypeError):
                 current_state = {
