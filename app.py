@@ -229,32 +229,25 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     last_user_msg = state["messages"][-1].content.lower()
     is_follow_up = bool(re.search(r"\b(more|another|additional)\b", last_user_msg))
 
-    # Inject prior context if needed
-    if is_follow_up and (state.get("last_category") or state.get("last_intent")):
-        hint = "Context reminder: "
-        if state.get("last_category"):
-            hint += f"previous category was {state['last_category']}. "
-        if state.get("last_intent"):
-            hint += f"previous intent was {state['last_intent']}."
-        state["messages"].append(HumanMessage(content=hint))
-
     # Add system prompt for structured queries
     structured_prompt = SystemMessage(
         content="You are a data analyst for customer support queries. "
                 "Answer structured questions about categories, intents, and examples. "
                 "Use available tools to get precise data."
     )
-   # Inject last used context if available
+    
+    # Inject last used context if available and not a fresh query
     context_summary = []
-    if state.get("last_category"):
-        context_summary.append(f"Category: {state['last_category']}")
-    if state.get("last_intent"):
-        context_summary.append(f"Intent: {state['last_intent']}")
+    if is_follow_up: # Only inject context if it's a follow-up
+        if state.get("last_category"):
+            context_summary.append(f"Category: {state['last_category']}")
+        if state.get("last_intent"):
+            context_summary.append(f"Intent: {state['last_intent']}")
+    
+    messages = [structured_prompt]
     if context_summary:
-        context_message = HumanMessage(content="Previous context:\n" + "\n".join(context_summary))
-        messages = [structured_prompt, context_message] + state["messages"]
-    else:
-        messages = [structured_prompt] + state["messages"]
+        messages.append(HumanMessage(content="Previous context:\n" + "\n".join(context_summary)))
+    messages.extend([msg for msg in state["messages"] if isinstance(msg, HumanMessage) or isinstance(msg, AIMessage)])
 
 
     # Bind tools and invoke LLM with tool call
@@ -263,6 +256,12 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     tool_calls = response.tool_calls
     results = []
 
+    # Reset last_category and last_intent before potential new assignments
+    # This prevents carrying over context from a previous, unrelated structured query
+    if not is_follow_up:
+        state["last_category"] = None
+        state["last_intent"] = None
+
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
@@ -270,12 +269,12 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             tool_func = next(t for t in structured_tools if t.name == tool_name)
             print(f"Invoking tool: {tool_name} with args {args}", flush=True)
 
-            # Patch missing follow-up context before execution
+            # Patch missing follow-up context before execution for show_examples
             if tool_name == "show_examples":
                 if (not args.get("category") or args["category"] is None) and state.get("last_category"):
                     args["category"] = state["last_category"]
                     print(f"✅ Using fallback category: {state['last_category']}")
-                if not args.get("intent") and state.get("last_intent"):
+                if (not args.get("intent") or args["intent"] is None) and state.get("last_intent"):
                     args["intent"] = state["last_intent"]
                     print(f"✅ Using fallback intent: {state['last_intent']}")
                 print(f"🧪 Final args to show_examples: {args}")
@@ -284,17 +283,16 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 if is_follow_up:
                     args["n"] = min(args.get("n", 3) + 2, 10)
                     print(f"⬆️ Increased example count to: {args['n']}")
-
-            # Log before storing
-            print(f"📦 before storing context: {args}", flush=True)
-
-            # Store new context
+            
+            # Store new context *after* potential patching, but before tool execution
+            # This ensures that the context being stored is the one actually used by the tool
             if tool_name == "show_examples":
-                if "category" in args:
+                if "category" in args and args["category"] is not None:
                     state["last_category"] = args["category"]
-                if "intent" in args:
+                if "intent" in args and args["intent"] is not None:
                     state["last_intent"] = args["intent"]
                 print(f"✅ Stored context: category={state.get('last_category')}, intent={state.get('last_intent')}", flush=True)
+
 
             # Run the tool
             result = tool_func.invoke(args)
@@ -304,11 +302,13 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
         except StopIteration:
             state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
+        except Exception as e:
+            state["messages"].append(AIMessage(content=f"Error executing tool {tool_name}: {e}"))
+            print(f"Error during tool execution: {e}")
 
     state["last_tool_results"] = results
     print(f"✅ Finished structured_agent", flush=True)
     return state
-
 
 
 def unstructured_agent(state: GraphState, config: RunnableConfig):
@@ -341,6 +341,11 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
     tool_calls = response.tool_calls
     results = []
     
+    # For unstructured queries, we typically don't carry category/intent context forward.
+    # So, explicitly reset them here if this path is taken.
+    state["last_category"] = None
+    state["last_intent"] = None
+
     for tool_call in tool_calls:
         if tool_call["name"] == "summarize":
             args = tool_call["args"]
@@ -357,6 +362,8 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
 
 def out_of_scope_handler(state: GraphState):
     state["messages"].append(AIMessage(content="I can only answer questions about customer service data."))
+    state["last_category"] = None # Reset context for out-of-scope
+    state["last_intent"] = None
     return state
 
 def update_summary_memory(state: GraphState, config: RunnableConfig):
@@ -379,7 +386,9 @@ def update_summary_memory(state: GraphState, config: RunnableConfig):
     state["user_summary"] = new_summary
     return state
 
-def store_context(state: GraphState, config: RunnableConfig):
+def store_context(state: GraphState):
+    # This node primarily ensures that the state changes (like last_category/intent)
+    # are captured and persisted by the LangGraph checkpoint after structured_agent.
     print(f"✅ Storing context: category={state.get('last_category')}, intent={state.get('last_intent')}")
     return state
 
@@ -398,7 +407,7 @@ def build_workflow():
 
     # Set entry point and explicitly add START edge
     workflow.set_entry_point("classify")
-    workflow.add_edge(START, "classify") 
+    workflow.add_edge(START, "classify")
     
     def route_from_classify(state: dict) -> str:
         # Access query_type directly from the state dictionary
@@ -406,7 +415,14 @@ def build_workflow():
             print("⚠️ Warning: query_type not found! Defaulting to out_of_scope")
             return "out_of_scope"
         print(f">>> Routing to: {state['query_type']}")
-        return state["query_type"]
+        
+        # Route to the appropriate agent or directly to final response for out_of_scope
+        if state["query_type"] == "structured":
+            return "structured_agent"
+        elif state["query_type"] == "unstructured":
+            return "unstructured_agent"
+        else: # out_of_scope
+            return "out_of_scope"
 
     # Add conditional branching
     workflow.add_conditional_edges(
@@ -415,7 +431,7 @@ def build_workflow():
         {
             "structured": "structured_agent",
             "unstructured": "unstructured_agent",
-            "out_of_scope": "generate_final_response",
+            "out_of_scope": "generate_final_response", # Directly go to final response for OOS
         }
     )
 
@@ -423,6 +439,7 @@ def build_workflow():
     workflow.add_edge("structured_agent", "store_context")
     workflow.add_edge("store_context", "update_memory")
     workflow.add_edge("unstructured_agent", "update_memory")
+    workflow.add_edge("out_of_scope", "generate_final_response") # Route from out_of_scope
     workflow.add_edge("update_memory", "generate_final_response")
     workflow.add_edge("generate_final_response", END)
 
@@ -436,13 +453,18 @@ def main():
     
     if "session_id" not in st.session_state:
         st.session_state.session_id = str(uuid.uuid4())
+        # Initialize last_category and last_intent in session_state as well
         st.session_state.messages = []
+        st.session_state.last_category = None
+        st.session_state.last_intent = None
     
     session_id = st.sidebar.text_input("Session ID", value=st.session_state.session_id)
     
     if session_id != st.session_state.session_id:
         st.session_state.session_id = session_id
         st.session_state.messages = []
+        st.session_state.last_category = None # Reset when session ID changes
+        st.session_state.last_intent = None # Reset when session ID changes
         st.experimental_rerun()
     
     st.sidebar.write(f"Active Session: `{session_id}`")
@@ -454,17 +476,25 @@ def main():
         })
         try:
             state = memory.get(config)
-            if state and "user_summary" in state:
+            if state: # Check if state is not None
                 st.sidebar.subheader("Your Memory Summary")
-                st.sidebar.markdown(state["user_summary"])
-                if "last_category" in state:
+                if "user_summary" in state and state["user_summary"]:
+                    st.sidebar.markdown(state["user_summary"])
+                else:
+                    st.sidebar.info("No user summary yet.")
+
+                # Display last_category and last_intent from the retrieved state
+                if "last_category" in state and state["last_category"]:
                     st.sidebar.write(f"Last category: {state['last_category']}")
-                if "last_intent" in state:
+                if "last_intent" in state and state["last_intent"]:
                     st.sidebar.write(f"Last intent: {state['last_intent']}")
+                
+                if not state.get("user_summary") and not state.get("last_category") and not state.get("last_intent"):
+                    st.sidebar.info("No memory stored yet.")
             else:
-                st.sidebar.info("No memory stored yet")
-        except Exception:
-            st.sidebar.warning("Couldn't retrieve memory")
+                st.sidebar.info("No memory stored yet.")
+        except Exception as e:
+            st.sidebar.warning(f"Couldn't retrieve memory: {e}")
     
     for msg in st.session_state.messages:
         st.chat_message(msg["role"]).markdown(msg["content"])
@@ -480,47 +510,62 @@ def main():
                 "checkpoint_ns": "main"
             })
             
-            default_state = {
-                "values": {},
-                "next": ("classify",),
-                "messages": [],
-                "session_id": session_id,
-                "last_tool_results": [],
-                "user_summary": "",
-                "query_type": None,
-                "thread_id": session_id,
-                "final_response": "",
-                "last_category": None,
-                "last_intent": None
-            }
+            # Retrieve the full state from memory for the current session
+            current_state_from_memory = memory.get(config)
+
+            # Initialize current_state for this turn
+            # Prioritize state from memory, otherwise use a default structure
+            if current_state_from_memory:
+                current_state = current_state_from_memory.copy()
+            else:
+                current_state = {
+                    "values": {},
+                    "next": ("classify",), # Always start with classify
+                    "messages": [], # Messages will be appended below
+                    "session_id": session_id,
+                    "last_tool_results": [],
+                    "user_summary": "",
+                    "query_type": None,
+                    "thread_id": session_id,
+                    "final_response": "",
+                    "last_category": None, # Ensure these are initialized as None if no memory
+                    "last_intent": None
+                }
             
-            try:
-                current_state = memory.get(config)
-                if current_state is None:
-                    current_state = default_state
-                else:
-                    for k in list(default_state.keys()):
-                        if k not in current_state:  # Only add if key is missing
-                            current_state[k] = default_state[k]
-            except Exception:
-                current_state = default_state
+            # Ensure messages from Streamlit session state are in the LangGraph state
+            # This is crucial for the LLM to see the full conversation history for classification
+            current_state["messages"] = [
+                HumanMessage(content=msg["content"]) if msg["role"] == "user" else AIMessage(content=msg["content"])
+                for msg in st.session_state.messages
+            ]
             
-            # Add new user message to state
-            current_state["messages"].append(HumanMessage(content=prompt))
-            
-            # Reset next node to start workflow from beginning
-            current_state["next"] = ("classify",)
-            
+            # Add new user message to state (it's already in st.session_state.messages)
+            # current_state["messages"].append(HumanMessage(content=prompt)) # This is now handled by the above list comprehension
+
             # Process workflow
             final_response = None
             final_state = None
-            for output in workflow.stream(current_state, config):
-                for node, state in output.items():
-                    final_state = state  # Track the last updated state
-                    if node == "generate_final_response":
-                        final_response = state.get("final_response")
-            
-            
+            try:
+                for output in workflow.stream(current_state, config):
+                    for node, state in output.items():
+                        final_state = state  # Track the last updated state
+                        if node == "generate_final_response":
+                            final_response = state.get("final_response")
+                
+                # After the workflow completes, update Streamlit's session_state
+                # with the latest values from the final_state of the graph run.
+                if final_state:
+                    st.session_state.last_category = final_state.get("last_category")
+                    st.session_state.last_intent = final_state.get("last_intent")
+                    st.session_state.user_summary = final_state.get("user_summary") # Also update user_summary
+
+            except Exception as e:
+                error_msg = f"An error occurred during processing: {e}"
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+                st.chat_message("assistant").markdown(error_msg)
+                print(f"Workflow execution error: {e}")
+                final_response = None # Ensure no partial response is displayed
+
             # Display response
             if final_response:
                 st.session_state.messages.append({
@@ -528,13 +573,16 @@ def main():
                     "content": final_response
                 })
                 st.chat_message("assistant").markdown(final_response)
-            else:
-                error_msg = "No response generated. Please try again."
+            elif not st.session_state.messages or (st.session_state.messages[-1]["role"] != "assistant"):
+                # Fallback if no specific final_response but no error
+                # This could happen if the graph ends without hitting generate_final_response cleanly
+                fallback_msg = "I'm not sure how to respond to that. Can you rephrase?"
                 st.session_state.messages.append({
                     "role": "assistant",
-                    "content": error_msg
+                    "content": fallback_msg
                 })
-                st.chat_message("assistant").markdown(error_msg)
+                st.chat_message("assistant").markdown(fallback_msg)
+
 
 if __name__ == "__main__":
     main()
