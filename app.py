@@ -457,9 +457,9 @@ def main():
             if state and "user_summary" in state:
                 st.sidebar.subheader("Your Memory Summary")
                 st.sidebar.markdown(state["user_summary"])
-                if "last_category" in state:
+                if "last_category" in state and state["last_category"]:
                     st.sidebar.write(f"Last category: {state['last_category']}")
-                if "last_intent" in state:
+                if "last_intent" in state and state["last_intent"]:
                     st.sidebar.write(f"Last intent: {state['last_intent']}")
             else:
                 st.sidebar.info("No memory stored yet")
@@ -480,6 +480,7 @@ def main():
                 "checkpoint_ns": "main"
             })
             
+            # ✅ FIXED: Don't reset context fields in default_state
             default_state = {
                 "values": {},
                 "next": ("classify",),
@@ -490,20 +491,34 @@ def main():
                 "query_type": None,
                 "thread_id": session_id,
                 "final_response": "",
-                "last_category": None,
-                "last_intent": None
+                # ❌ Remove these lines - they were overwriting stored values:
+                # "last_category": None,
+                # "last_intent": None
             }
             
             try:
                 current_state = memory.get(config)
                 if current_state is None:
                     current_state = default_state
+                    # Only set context fields to None for brand new sessions
+                    current_state["last_category"] = None
+                    current_state["last_intent"] = None
                 else:
-                    for k in list(default_state.keys()):
-                        if k not in current_state:  # Only add if key is missing
-                            current_state[k] = default_state[k]
+                    # ✅ FIXED: Only add missing keys, don't overwrite existing ones
+                    for k, v in default_state.items():
+                        if k not in current_state:
+                            current_state[k] = v
+                    
+                    # Ensure context fields exist but don't overwrite them
+                    if "last_category" not in current_state:
+                        current_state["last_category"] = None
+                    if "last_intent" not in current_state:
+                        current_state["last_intent"] = None
+                        
             except Exception:
                 current_state = default_state
+                current_state["last_category"] = None
+                current_state["last_intent"] = None
             
             # Add new user message to state
             current_state["messages"].append(HumanMessage(content=prompt))
@@ -519,7 +534,6 @@ def main():
                     final_state = state  # Track the last updated state
                     if node == "generate_final_response":
                         final_response = state.get("final_response")
-            
             
             # Display response
             if final_response:
