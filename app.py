@@ -500,38 +500,6 @@ def build_workflow(memory):
 
     return workflow.compile(checkpointer=memory)
 
-# 5. Optional: Replace your memory button section with this enhanced version:
-
-if st.sidebar.button("Show My Memory"):
-    config = RunnableConfig(configurable={
-        "thread_id": session_id,
-    })
-    try:
-        checkpoint = workflow.get_state(config)
-        if checkpoint and checkpoint.values:
-            state = checkpoint.values
-            st.sidebar.subheader("🧠 Your Memory Summary")
-            
-            summary = state.get("user_summary", "No information stored yet")
-            if summary and summary.strip():
-                st.sidebar.markdown(summary)
-                
-                # Show additional context
-                if state.get("last_category"):
-                    st.sidebar.write(f"🔖 Last category: **{state['last_category']}**")
-                if state.get("last_intent"):
-                    st.sidebar.write(f"🎯 Last intent: **{state['last_intent']}**")
-                    
-                # Show conversation stats
-                msg_count = len(state.get("messages", []))
-                st.sidebar.write(f"💬 Messages exchanged: {msg_count}")
-            else:
-                st.sidebar.info("Start asking questions to build your memory profile!")
-        else:
-            st.sidebar.info("No memory stored yet")
-    except Exception as e:
-        st.sidebar.warning(f"Couldn't retrieve memory: {e}")
-
 def main():
     df = load_dataset_to_df()
     tools = make_tools(df)
