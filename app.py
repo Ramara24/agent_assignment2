@@ -480,25 +480,31 @@ def main():
                 "checkpoint_ns": "main"
             })
             
-            # Initialize or retrieve state
+            default_state = {
+                "values": {},
+                "next": ("classify",),
+                "messages": [],
+                "session_id": session_id,
+                "last_tool_results": [],
+                "user_summary": "",
+                "query_type": None,
+                "thread_id": session_id,
+                "final_response": "",
+                "last_category": None,
+                "last_intent": None
+            }
+            
             try:
                 current_state = memory.get(config)
                 if current_state is None:
-                    raise KeyError("No previous state")
-            except (KeyError, TypeError):
-                current_state = {
-                    "values": {},
-                    "next": ("classify",),
-                    "messages": [],
-                    "session_id": session_id,
-                    "last_tool_results": [],
-                    "user_summary": "",
-                    "query_type": None,
-                    "thread_id": session_id,
-                    "final_response": "",
-                    "last_category": None,
-                    "last_intent": None
-                }
+                    current_state = default_state
+                else:
+                    # Merge missing fields from default
+                    for k, v in default_state.items():
+                        if k not in current_state:
+                            current_state[k] = v
+            except Exception:
+                current_state = default_state
             
             # Add new user message to state
             current_state["messages"].append(HumanMessage(content=prompt))
