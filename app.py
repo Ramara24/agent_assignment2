@@ -499,10 +499,9 @@ def main():
                 if current_state is None:
                     current_state = default_state
                 else:
-                    # Merge missing fields from default
-                    for k, v in default_state.items():
-                        if k not in current_state:
-                            current_state[k] = v
+                    for k in list(default_state.keys()):
+                        if k not in current_state:  # Only add if key is missing
+                            current_state[k] = default_state[k]
             except Exception:
                 current_state = default_state
             
