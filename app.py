@@ -239,7 +239,18 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 "Answer structured questions about categories, intents, and examples. "
                 "Use available tools to get precise data."
     )
-    messages = [structured_prompt] + state["messages"]
+   # Inject last used context if available
+    context_summary = []
+    if state.get("last_category"):
+        context_summary.append(f"Category: {state['last_category']}")
+    if state.get("last_intent"):
+        context_summary.append(f"Intent: {state['last_intent']}")
+    if context_summary:
+        context_message = HumanMessage(content="Previous context:\n" + "\n".join(context_summary))
+        messages = [structured_prompt, context_message] + state["messages"]
+    else:
+        messages = [structured_prompt] + state["messages"]
+
 
     # Bind tools and invoke LLM with tool call
     llm_with_tools = llm.bind_tools(structured_tools)
