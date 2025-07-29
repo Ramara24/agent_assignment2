@@ -58,12 +58,83 @@ def make_tools(df: pd.DataFrame):
     def count_intent(intent: str) -> int:
         """Counts the number of examples in each intent and returns the result."""
         return len(df[df['intent'] == intent.lower()])
-
+        
     @tool
     def get_intent_distribution() -> Dict[str, int]:
         """Show intent distributions."""
         return df['intent'].value_counts().to_dict()
-
+    
+    # calculation tools
+    @tool
+    def calculate_sum_of_intents(intent_names: List[str]) -> int:
+        """
+        Calculate the sum of counts for specific intents.
+        Args:
+            intent_names: List of intent names to sum up.
+        Returns:
+            Total count of all specified intents.
+        """
+        total = 0
+        intent_counts = df['intent'].value_counts().to_dict()
+        for intent in intent_names:
+            intent_lower = intent.lower().strip()
+            if intent_lower in intent_counts:
+                total += intent_counts[intent_lower]
+                print(f"Adding {intent_lower}: {intent_counts[intent_lower]}")
+            else:
+                print(f"Warning: Intent '{intent_lower}' not found")
+        return total
+    
+    @tool
+    def get_last_n_intents(n: int = 2) -> Dict[str, int]:
+        """
+        Get the last N intents from the distribution (lowest counts).
+        Args:
+            n: Number of last intents to retrieve (default 2).
+        Returns:
+            Dictionary with the last N intents and their counts.
+        """
+        intent_counts = df['intent'].value_counts()
+        last_n = intent_counts.tail(n)
+        return last_n.to_dict()
+    
+    @tool
+    def calculate_total_of_last_n_intents(n: int = 2) -> int:
+        """
+        Calculate the total count of the last N intents (lowest frequency intents).
+        Args:
+            n: Number of last intents to sum (default 2).
+        Returns:
+            Total count of the last N intents.
+        """
+        intent_counts = df['intent'].value_counts()
+        last_n = intent_counts.tail(n)
+        total = last_n.sum()
+        print(f"Last {n} intents: {dict(last_n)}")
+        print(f"Total: {total}")
+        return total
+    
+    @tool
+    def perform_calculation(expression: str) -> float:
+        """
+        Perform basic mathematical calculations safely.
+        Args:
+            expression: Mathematical expression (e.g., "973 + 950", "100 * 2").
+        Returns:
+            Result of the calculation.
+        """
+        try:
+            # Only allow basic math operations for security
+            allowed_chars = set('0123456789+-*/.() ')
+            if not all(c in allowed_chars for c in expression):
+                return "Error: Invalid characters in expression"
+            
+            result = eval(expression)
+            print(f"Calculation: {expression} = {result}")
+            return result
+        except Exception as e:
+            return f"Error: {str(e)}"
+    
     @tool
     def get_top_categories(n: int = 5) -> List[str]:
         """Return the top N most frequent categories."""
@@ -118,8 +189,21 @@ def make_tools(df: pd.DataFrame):
         response = llm.invoke(f"Summarize key patterns from these customer service examples about {topic}:\n\n{text_examples}")
         return response.content
 
-    return [get_all_categories, get_all_intents, get_intent_distribution, count_category, count_intent, get_top_categories, show_examples, summarize]
-
+    # Return all tools including the new ones
+    return [
+        get_all_categories, 
+        get_all_intents, 
+        get_intent_distribution, 
+        count_category, 
+        count_intent, 
+        get_top_categories, 
+        show_examples, 
+        summarize,
+        calculate_sum_of_intents,       
+        get_last_n_intents,            
+        calculate_total_of_last_n_intents,
+        perform_calculation             
+    ]
 
 class GraphState(TypedDict):
     values: Dict[str, Any]
@@ -317,22 +401,16 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     last_user_msg = state["messages"][-1].content.lower()
     is_follow_up = bool(re.search(r"\b(more|another|additional)\b", last_user_msg))
 
-    # Inject prior context if needed
-    if is_follow_up and (state.get("last_category") or state.get("last_intent")):
-        hint = "Context reminder: "
-        if state.get("last_category"):
-            hint += f"previous category was {state['last_category']}. "
-        if state.get("last_intent"):
-            hint += f"previous intent was {state['last_intent']}."
-        state["messages"].append(HumanMessage(content=hint))
-
-    # Add system prompt for structured queries
+    # Enhanced system prompt that mentions calculation capabilities
     structured_prompt = SystemMessage(
         content="You are a data analyst for customer support queries. "
                 "Answer structured questions about categories, intents, and examples. "
+                "You can also perform calculations on the data when needed. "
+                "For questions about totals, sums, or mathematical operations on the data, "
+                "use the appropriate calculation tools. "
                 "Use available tools to get precise data."
     )
-   # Inject last used context if available
+    # Inject last used context if available
     context_summary = []
     if state.get("last_category"):
         context_summary.append(f"Category: {state['last_category']}")
