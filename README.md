@@ -128,7 +128,7 @@ User: "Summarize how agents respond to check_invoice intent"
 ## 🚀 Setup
 
 ### Prerequisites
-- Python 3.8+
+- Python 3.12
 - OpenAI API key
 - Streamlit
 
