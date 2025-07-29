@@ -268,6 +268,7 @@ def classify_query(state: GraphState):
     - "Show examples of Category X" → structured
     - "Summarize Category X" → unstructured
     - "Who is Magnus Carlson?" → out_of_scope
+    - "What is Serj's rating?" -> → out_of_scope
     """
     
     messages = [
@@ -546,7 +547,9 @@ def unstructured_agent(state: GraphState, config: RunnableConfig):
     return state
 
 def out_of_scope_handler(state: GraphState):
-    state["messages"].append(AIMessage(content="I can only answer questions about customer service data."))
+    response = "I can only answer questions about customer service data. Please ask about the dataset, categories, intents, or summaries."
+    state["messages"].append(AIMessage(content=response))
+    state["last_tool_results"] = [response]
     return state
 
 
