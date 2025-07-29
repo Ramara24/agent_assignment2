@@ -448,6 +448,7 @@ def main():
     session_id = st.sidebar.text_input("Session ID", value=st.session_state.session_id)
     
     if session_id != st.session_state.session_id:
+        print(f"generate new session id")
         st.session_state.session_id = session_id
         st.session_state.messages = []
         st.experimental_rerun()
@@ -461,7 +462,8 @@ def main():
         })
         try:
             state = memory.get(config)
-            if state and "user_summary" in state:
+            print(f" state = {state}")
+            if state:
                 st.sidebar.subheader("Your Memory Summary")
                 st.sidebar.markdown(state["user_summary"])
                 if "last_category" in state and state["last_category"]:
