@@ -50,39 +50,23 @@ def make_tools(df: pd.DataFrame):
         return sorted(df['intent'].unique().tolist())
 
     @tool
-    def count_category(category: str) -> int:
-        """Counts the number of examples in each category and returns the result."""
-        return len(df[df['category'] == category.upper()])
-
-    @tool
-    def count_intent(intent: str) -> int:
-        """Counts the number of examples in each intent and returns the result."""
-        return len(df[df['intent'] == intent.lower()])
-        
-    @tool
-    def get_intent_distribution() -> Dict[str, int]:
-        """Show intent distributions."""
-        return df['intent'].value_counts().to_dict()
-    
-    # calculation tools
-    @tool
-    def calculate_sum_of_intents(intent_names: List[str]) -> int:
+    def calculate_total_of_last_n_intents(n: int = 2) -> int:
         """
-        Calculate the sum of counts for specific intents.
+        Calculate the total count of the last N intents (lowest frequency intents).
         Args:
-            intent_names: List of intent names to sum up.
+            n: Number of last intents to sum (default 2).
         Returns:
-            Total count of all specified intents.
+            Total count of the last N intents.
         """
-        total = 0
-        intent_counts = df['intent'].value_counts().to_dict()
-        for intent in intent_names:
-            intent_lower = intent.lower().strip()
-            if intent_lower in intent_counts:
-                total += intent_counts[intent_lower]
-                print(f"Adding {intent_lower}: {intent_counts[intent_lower]}")
-            else:
-                print(f"Warning: Intent '{intent_lower}' not found")
+        intent_counts = df['intent'].value_counts()
+        last_n = intent_counts.tail(n)
+        
+        # ✅ Convert numpy types to regular Python types
+        last_n_dict = {k: int(v) for k, v in last_n.items()}  # Convert np.int64 to int
+        total = int(last_n.sum())  # Convert np.int64 to int
+        
+        print(f"Last {n} intents: {last_n_dict}")
+        print(f"Total: {total}")
         return total
     
     @tool
@@ -96,23 +80,53 @@ def make_tools(df: pd.DataFrame):
         """
         intent_counts = df['intent'].value_counts()
         last_n = intent_counts.tail(n)
-        return last_n.to_dict()
+        
+        # ✅ Convert numpy.int64 to regular int
+        return {k: int(v) for k, v in last_n.to_dict().items()}
     
     @tool
-    def calculate_total_of_last_n_intents(n: int = 2) -> int:
+    def get_intent_distribution() -> Dict[str, int]:
+        """Show intent distributions."""
+        # ✅ Convert all numpy types to regular Python types
+        distribution = df['intent'].value_counts().to_dict()
+        return {k: int(v) for k, v in distribution.items()}
+    
+    @tool
+    def calculate_sum_of_intents(intent_names: List[str]) -> int:
         """
-        Calculate the total count of the last N intents (lowest frequency intents).
+        Calculate the sum of counts for specific intents.
         Args:
-            n: Number of last intents to sum (default 2).
+            intent_names: List of intent names to sum up.
         Returns:
-            Total count of the last N intents.
+            Total count of all specified intents.
         """
-        intent_counts = df['intent'].value_counts()
-        last_n = intent_counts.tail(n)
-        total = last_n.sum()
-        print(f"Last {n} intents: {dict(last_n)}")
-        print(f"Total: {total}")
-        return total
+        total = 0
+        intent_counts = df['intent'].value_counts().to_dict()
+        
+        for intent in intent_names:
+            intent_lower = intent.lower().strip()
+            if intent_lower in intent_counts:
+                count = int(intent_counts[intent_lower])  # ✅ Convert to int
+                total += count
+                print(f"Adding {intent_lower}: {count}")
+            else:
+                print(f"Warning: Intent '{intent_lower}' not found")
+        
+        return int(total)  # ✅ Ensure return type is int
+    
+    # Also fix any other tools that might return numpy types:
+    
+    @tool
+    def count_category(category: str) -> int:
+        """Counts the number of examples in each category and returns the result."""
+        count = len(df[df['category'] == category.upper()])
+        return int(count)  # ✅ Ensure it's a regular int
+    
+    @tool
+    def count_intent(intent: str) -> int:
+        """Counts the number of examples in each intent and returns the result."""
+        count = len(df[df['intent'] == intent.lower()])
+        return int(count)  # ✅ Ensure it's a regular int
     
     @tool
     def perform_calculation(expression: str) -> float:
