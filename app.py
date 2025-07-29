@@ -294,12 +294,13 @@ def classify_query(state: GraphState):
 def memory_agent(state: GraphState, config: RunnableConfig):
     print(">>> Entered memory_agent", flush=True)
     
+    # Get current summary
     current_summary = state.get("user_summary", "")
     
     if not current_summary or current_summary.strip() == "":
-        response = "I don't have any specific information about you yet. As we continue our conversation about customer support data, I'll start remembering key details about your interests and preferences."
+        response = "I don't have enough information about your query patterns yet. As we continue our conversation, I'll start tracking what topics you're most interested in and how you prefer to interact with the data."
     else:
-        response = f"Here's what I remember about you:\n\n{current_summary}"
+        response = f"Here's what I've observed about your query patterns and interests:\n\n{current_summary}"
     
     # Don't set final_response, let generate_final_response handle it
     state["messages"].append(AIMessage(content=response))
@@ -312,40 +313,62 @@ def summary_node(state: GraphState, config: RunnableConfig):
     
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
     
-    # Get recent conversation (last 6 messages)
+    # Get recent USER messages only (not agent responses)
     recent_messages = state["messages"][-6:]
-    conversation = "\n".join(
-        f"{msg.__class__.__name__}: {msg.content}" 
-        for msg in recent_messages 
-        if isinstance(msg, (HumanMessage, AIMessage))
-    )
+    user_queries = []
+    query_types = []
+    
+    for msg in recent_messages:
+        if isinstance(msg, HumanMessage):
+            user_queries.append(msg.content)
+            
+    # Also track query types and categories from state
+    current_query_type = state.get("query_type")
+    current_category = state.get("last_category") 
+    current_intent = state.get("last_intent")
+    
+    # Format user behavior for analysis
+    user_behavior = "\n".join([f"User query: {query}" for query in user_queries])
     
     current_summary = state.get("user_summary", "")
     
-    # Enhanced prompt for better memory extraction
+    # FIXED: Focus on USER behavior patterns, not agent responses
     prompt = f"""
-    You are a memory manager for a customer support data analyst chatbot. Your job is to extract and maintain key information about the user.
+    You are analyzing USER BEHAVIOR patterns for a customer support data analyst chatbot. Focus on what the USER asks about, prefers, and does - NOT what the agent responds with.
 
-    Current Summary: {current_summary if current_summary else "No previous information"}
+    Current User Profile: {current_summary if current_summary else "No previous information"}
     
-    Recent Conversation:
-    {conversation}
+    Recent User Queries:
+    {user_behavior}
     
-    Instructions:
-    1. Extract key facts about the user's interests, preferences, and needs
-    2. Focus on patterns in their queries (what categories/intents they ask about most)
-    3. Note any specific use cases or business context they mention
-    4. Keep it concise - maximum {SUMMARY_MEMORY_LIMIT} key points
-    5. Update existing information rather than duplicate it
-    6. If no new meaningful information, return the current summary unchanged
+    Current Session Context:
+    - Query type: {current_query_type}
+    - Category asked about: {current_category}
+    - Intent asked about: {current_intent}
     
-    Examples of good memory items:
-    - "User frequently asks about ORDER category examples"
-    - "Interested in customer service training data"
-    - "Working on chatbot development project"
-    - "Prefers detailed examples over summaries"
+    Instructions - Focus on USER PATTERNS:
+    1. Track what CATEGORIES/INTENTS the user asks about most frequently
+    2. Note the user's query patterns (prefers examples vs summaries vs counts)
+    3. Track if user asks follow-up questions or one-off queries
+    4. Note any out-of-scope attempts
+    5. Keep it concise - maximum {SUMMARY_MEMORY_LIMIT} key points about USER behavior
+    6. Update existing information rather than duplicate it
+    7. If no new meaningful USER behavior patterns, return "NO_UPDATE"
     
-    Updated Summary (or "NO_UPDATE" if no new information):
+    Examples of GOOD user profile items (focus on USER, not agent):
+    - "User frequently asks about ORDER category (3 times)"
+    - "User prefers getting examples rather than summaries"
+    - "User asks follow-up questions for more examples"
+    - "User tried 2 out-of-scope queries about non-dataset topics"
+    - "User interested in intent distributions and calculations"
+    - "User asks about multiple categories: ORDER, PAYMENT, ACCOUNT"
+    
+    Examples of BAD items to avoid (these focus on agent responses):
+    - "User seeks assistance with orders" (this is about agent help, not user interest)
+    - "User values step-by-step instructions" (this is about agent responses)
+    - "User is interested in earning rewards" (this came from dataset examples, not user behavior)
+    
+    Updated User Profile (or "NO_UPDATE" if no new USER behavior patterns):
     """
     
     try:
@@ -354,14 +377,15 @@ def summary_node(state: GraphState, config: RunnableConfig):
         
         if new_summary != "NO_UPDATE" and new_summary != current_summary:
             state["user_summary"] = new_summary
-            print(f"📝 Updated user summary: {new_summary}")
+            print(f"📝 Updated user profile: {new_summary}")
         else:
-            print("📝 No summary update needed")
+            print("📝 No user profile update needed")
             
     except Exception as e:
-        print(f"❌ Error updating summary: {e}")
+        print(f"❌ Error updating user profile: {e}")
     
     return state
+
     
 def generate_final_response(state: GraphState): 
     # Handle out-of-scope queries
