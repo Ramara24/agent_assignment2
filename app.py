@@ -215,8 +215,8 @@ class GraphState(TypedDict):
     final_response: str
     thread_id: str
     query_type: Optional[str]
-    last_category: Optional[str]  # New: track last used category for follow-ups
-    last_intent: Optional[str]    # New: track last used intent for follow-ups
+    last_category: Optional[str]  # track last used category for follow-ups
+    last_intent: Optional[str]    # track last used intent for follow-ups
 
 def classify_query(state: GraphState):
     llm = ChatOpenAI(model=MODEL_NAME, temperature=0, api_key=OPENAI_API_KEY)
@@ -229,7 +229,7 @@ def classify_query(state: GraphState):
     last_message = human_messages[-1]
     content = last_message.content.lower()
     
-    # NEW: Handle memory queries first
+    # Handle memory queries first
     memory_keywords = [
         "remember", "remmeber", "remeber", "rember",  # Common typos of "remember"
         "memory", "memorie", "memori",                 # Common typos of "memory"  
@@ -575,9 +575,9 @@ def build_workflow(memory):
     workflow.add_node("classify", classify_query)
     workflow.add_node("structured_agent", structured_agent)
     workflow.add_node("unstructured_agent", unstructured_agent)
-    workflow.add_node("memory_agent", memory_agent)  # NEW
+    workflow.add_node("memory_agent", memory_agent)  
     workflow.add_node("out_of_scope", out_of_scope_handler)
-    workflow.add_node("summary_node", summary_node)  # NEW - replaces update_memory
+    workflow.add_node("summary_node", summary_node) 
     workflow.add_node("store_context", store_context)
     workflow.add_node("generate_final_response", generate_final_response)
 
@@ -599,7 +599,7 @@ def build_workflow(memory):
         {
             "structured": "structured_agent",
             "unstructured": "unstructured_agent",
-            "memory": "memory_agent",  # NEW
+            "memory": "memory_agent", 
             "out_of_scope": "generate_final_response",
         }
     )
