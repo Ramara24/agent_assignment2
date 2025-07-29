@@ -228,7 +228,9 @@ def structured_agent(state: GraphState, config: RunnableConfig):
                 "Use available tools to get precise data."
     )
 
+    # Create new messages with system prompt
     messages = [structured_prompt] + state["messages"]
+
     llm_with_tools = llm.bind_tools(structured_tools)
     response = llm_with_tools.invoke(messages)
     tool_calls = response.tool_calls
@@ -237,40 +239,45 @@ def structured_agent(state: GraphState, config: RunnableConfig):
     for tool_call in tool_calls:
         tool_name = tool_call["name"]
         args = tool_call["args"]
-
         try:
             tool_func = next(t for t in structured_tools if t.name == tool_name)
             print(f"Invoking tool: {tool_name} with args {args}", flush=True)
 
-            # ✅ Always backfill missing category/intent from state (for follow-ups)
+            # Handle follow-up context for show_examples
             if tool_name == "show_examples":
-                if "category" not in args or not args["category"]:
-                    if state.get("last_category"):
-                        args["category"] = state["last_category"]
-                        print(f"✅ Using fallback category: {args['category']}")
-                if "intent" not in args or not args["intent"]:
-                    if state.get("last_intent"):
-                        args["intent"] = state["last_intent"]
-                        print(f"✅ Using fallback intent: {args['intent']}")
+                print(f"👀 raw args: {args}")
 
-            print("before")
+                # Use previous context if not explicitly provided
+                if not args.get("category") and state.get("last_category"):
+                    args["category"] = state["last_category"]
+                    print(f"✅ Using fallback category: {state['last_category']}")
+                if not args.get("intent") and state.get("last_intent"):
+                    args["intent"] = state["last_intent"]
+                    print(f"✅ Using fallback intent: {state['last_intent']}")
 
-            # ✅ Save context for future queries (but only if value is not None/empty)
+            # Log before storing
+            print(f"📦 before storing context: {args}", flush=True)
+
+            # Store context only if values are not None
             if tool_name == "show_examples":
-                print(f"REEM : {args}")
-                if args.get("category"):
-                    state["last_category"] = args["category"]
-                if args.get("intent"):
-                    state["last_intent"] = args["intent"]
-            print("after")
+                category = args.get("category")
+                if category is not None:
+                    state["last_category"] = category
+                intent = args.get("intent")
+                if intent is not None:
+                    state["last_intent"] = intent
+                print(f"✅ Stored context: category={state.get('last_category')}, intent={state.get('last_intent')}", flush=True)
 
-            # ✅ Handle "more examples" prompt
-            if tool_name == "show_examples" and re.search(r"\b(more|another|additional)\b", state["messages"][-1].content.lower()):
-                args["n"] = min(args.get("n", 3) + 2, 10)
-                print(f"Increased examples to: {args['n']}")
+            # Detect follow-up: "more", "another", "additional"
+            if tool_name == "show_examples":
+                last_user_msg = state["messages"][-1].content.lower()
+                if re.search(r"\b(more|another|additional)\b", last_user_msg):
+                    args["n"] = min(args.get("n", 3) + 2, 10)
+                    print(f"⬆️ Increased example count to: {args['n']}", flush=True)
 
+            # Invoke tool
             result = tool_func.invoke(args)
-            print(f"Tool result: {result}", flush=True)
+            print(f"🛠️ Tool result: {result}", flush=True)
 
             results.append(result)
             state["messages"].append(AIMessage(content=f"Tool {tool_name} result: {result}"))
@@ -278,7 +285,7 @@ def structured_agent(state: GraphState, config: RunnableConfig):
             state["messages"].append(AIMessage(content=f"Unknown tool: {tool_name}"))
 
     state["last_tool_results"] = results
-    print("we got here")
+    print(f"✅ Finished structured_agent", flush=True)
     return state
 
 
