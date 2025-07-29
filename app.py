@@ -22,7 +22,14 @@ SUMMARY_MEMORY_LIMIT = 3
 os.environ["LANGCHAIN_API_KEY"] = st.secrets["LANGCHAIN_API_KEY"]
 os.environ["LANGCHAIN_TRACING_V2"] = "true"
 os.environ["LANGCHAIN_PROJECT"] = "CustomerSupportLangGraph"
-memory = MemorySaver()
+
+@st.singleton
+def get_memory():
+    from langgraph.checkpoint.memory import MemorySaver
+    return MemorySaver()
+
+memory = get_memory()
+
 
 @st.cache_data
 def load_dataset_to_df() -> pd.DataFrame:
