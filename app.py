@@ -207,20 +207,19 @@ def classify_query(state: GraphState):
     print(f">>> Classification result: {state['query_type']}")
     return state
 
-# 2. Create a dedicated memory agent
 def memory_agent(state: GraphState, config: RunnableConfig):
     print(">>> Entered memory_agent", flush=True)
     
-    # Get current summary
-    current_summary = state.get("user_summary", "No previous interactions recorded.")
+    current_summary = state.get("user_summary", "")
     
     if not current_summary or current_summary.strip() == "":
         response = "I don't have any specific information about you yet. As we continue our conversation about customer support data, I'll start remembering key details about your interests and preferences."
     else:
         response = f"Here's what I remember about you:\n\n{current_summary}"
     
-    state["final_response"] = response
+    # Don't set final_response, let generate_final_response handle it
     state["messages"].append(AIMessage(content=response))
+    state["last_tool_results"] = [response]
     return state
 
 # 3. Create a dedicated summary node that intelligently decides what to store
@@ -494,7 +493,7 @@ def build_workflow(memory):
     workflow.add_edge("structured_agent", "store_context")
     workflow.add_edge("store_context", "summary_node")  # Changed from update_memory
     workflow.add_edge("unstructured_agent", "summary_node")  # Changed from update_memory
-    workflow.add_edge("memory_agent", END)  # Memory queries go directly to END
+    workflow.add_edge("memory_agent", "generate_final_response")
     workflow.add_edge("summary_node", "generate_final_response")  # Changed from update_memory
     workflow.add_edge("generate_final_response", END)
 
