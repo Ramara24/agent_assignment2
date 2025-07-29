@@ -461,8 +461,10 @@ def main():
             "checkpoint_ns": "main"
         })
         try:
-            state = memory.get(config)
-            print(f" state = {state}")
+            checkpoint = workflow.get_state(config)
+            if checkpoint and checkpoint.values:
+                state = checkpoint.values
+            print(f"state: {state}")
             if state:
                 st.sidebar.subheader("Your Memory Summary")
                 st.sidebar.markdown(state["user_summary"])
@@ -488,7 +490,7 @@ def main():
                 "thread_id": session_id,
                 "checkpoint_ns": "main"
             })
-            
+            print(f"📥 Loading state for thread_id: {session_id}")
             # ✅ FIXED: Don't reset context fields in default_state
             default_state = {
                 "values": {},
@@ -506,7 +508,11 @@ def main():
             }
             
             try:
-                current_state = memory.get(config)
+                checkpoint = workflow.get_state(config)
+                if checkpoint and checkpoint.values:
+                    current_state = checkpoint.values
+                else:
+                    current_state = default_state
                 if current_state is None:
                     current_state = default_state
                     # Only set context fields to None for brand new sessions
@@ -528,6 +534,9 @@ def main():
                 current_state = default_state
                 current_state["last_category"] = None
                 current_state["last_intent"] = None
+
+            print(f"🔍 Retrieved state keys: {list(current_state.keys()) if current_state else 'None'}")
+            print(f"🎯 Context values: category={current_state.get('last_category')}, intent={current_state.get('last_intent')}")
             
             # Add new user message to state
             current_state["messages"].append(HumanMessage(content=prompt))
