@@ -451,10 +451,11 @@ def main():
         print(f"generate new session id")
         st.session_state.session_id = session_id
         st.session_state.messages = []
-        st.experimental_rerun()
+        st.rerun()  # Fixed: use st.rerun() instead of st.experimental_rerun()
     
     st.sidebar.write(f"Active Session: `{session_id}`")
     
+    # Fixed memory button
     if st.sidebar.button("Show My Memory"):
         config = RunnableConfig(configurable={
             "thread_id": session_id,
@@ -464,117 +465,130 @@ def main():
             checkpoint = workflow.get_state(config)
             if checkpoint and checkpoint.values:
                 state = checkpoint.values
-            print(f"state: {state}")
-            if state:
+                print(f"Memory state: {state}")
                 st.sidebar.subheader("Your Memory Summary")
-                st.sidebar.markdown(state["user_summary"])
-                if "last_category" in state and state["last_category"]:
+                st.sidebar.markdown(state.get("user_summary", "No summary yet"))
+                if state.get("last_category"):
                     st.sidebar.write(f"Last category: {state['last_category']}")
-                if "last_intent" in state and state["last_intent"]:
+                if state.get("last_intent"):
                     st.sidebar.write(f"Last intent: {state['last_intent']}")
             else:
                 st.sidebar.info("No memory stored yet")
-        except Exception:
-            st.sidebar.warning("Couldn't retrieve memory")
+        except Exception as e:
+            st.sidebar.warning(f"Couldn't retrieve memory: {e}")
     
+    # Display chat history
     for msg in st.session_state.messages:
         st.chat_message(msg["role"]).markdown(msg["content"])
     
+    # Fixed: Only run when there's actual user input
     if prompt := st.chat_input("Ask about the dataset..."):
+        # Validate prompt is not None or empty
+        if not prompt or prompt.strip() == "":
+            st.error("Please enter a valid question.")
+            return
+            
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.chat_message("user").markdown(prompt)
         
         with st.spinner("Analyzing..."):
+            # Create config here, BEFORE the try block
             config = RunnableConfig(configurable={
                 "tools": tools,
                 "thread_id": session_id,
                 "checkpoint_ns": "main"
             })
-    print(f"📥 Loading state for thread_id: {session_id}")
-    
-    default_state = {
-        "values": {},
-        "next": ("classify",),
-        "messages": [],
-        "session_id": session_id,
-        "last_tool_results": [],
-        "user_summary": "",
-        "query_type": None,
-        "thread_id": session_id,
-        "final_response": "",
-    }
-    
-    try:
-        checkpoint = workflow.get_state(config)
-        if checkpoint and checkpoint.values:
-            # We have existing state - load it
-            current_state = checkpoint.values
-            print(f"✅ Successfully loaded persistent state!")
-            print(f"   - Messages: {len(current_state.get('messages', []))}")
-            print(f"   - Category: {current_state.get('last_category')}")
-            print(f"   - Intent: {current_state.get('last_intent')}")
             
-            # Ensure all required fields exist (add missing ones only)
-            for k, v in default_state.items():
-                if k not in current_state:
-                    current_state[k] = v
+            print(f"📥 Loading state for thread_id: {session_id}")
             
-            # Ensure context fields exist but don't overwrite them if they exist
-            if "last_category" not in current_state:
+            default_state = {
+                "values": {},
+                "next": ("classify",),
+                "messages": [],
+                "session_id": session_id,
+                "last_tool_results": [],
+                "user_summary": "",
+                "query_type": None,
+                "thread_id": session_id,
+                "final_response": "",
+            }
+            
+            try:
+                checkpoint = workflow.get_state(config)
+                if checkpoint and checkpoint.values:
+                    # We have existing state - load it
+                    current_state = checkpoint.values
+                    print(f"✅ Successfully loaded persistent state!")
+                    print(f"   - Messages: {len(current_state.get('messages', []))}")
+                    print(f"   - Category: {current_state.get('last_category')}")
+                    print(f"   - Intent: {current_state.get('last_intent')}")
+                    
+                    # Ensure all required fields exist (add missing ones only)
+                    for k, v in default_state.items():
+                        if k not in current_state:
+                            current_state[k] = v
+                    
+                    # Ensure context fields exist but don't overwrite them if they exist
+                    if "last_category" not in current_state:
+                        current_state["last_category"] = None
+                    if "last_intent" not in current_state:
+                        current_state["last_intent"] = None
+                        
+                else:
+                    # No existing state - create new one
+                    print("🆕 No previous state found, creating new state")
+                    current_state = default_state.copy()
+                    current_state["last_category"] = None
+                    current_state["last_intent"] = None
+                    
+            except Exception as e:
+                print(f"❌ Error loading state: {e}")
+                current_state = default_state.copy()
                 current_state["last_category"] = None
-            if "last_intent" not in current_state:
                 current_state["last_intent"] = None
-                
-        else:
-            # No existing state - create new one
-            print("🆕 No previous state found, creating new state")
-            current_state = default_state.copy()
-            current_state["last_category"] = None
-            current_state["last_intent"] = None
+
+            print(f"🔍 Retrieved state keys: {list(current_state.keys())}")
+            print(f"🎯 Context values: category={current_state.get('last_category')}, intent={current_state.get('last_intent')}")
             
-    except Exception as e:
-        print(f"❌ Error loading state: {e}")
-        current_state = default_state.copy()
-        current_state["last_category"] = None
-        current_state["last_intent"] = None
-    
-    print(f"🔍 Retrieved state keys: {list(current_state.keys())}")
-    print(f"🎯 Context values: category={current_state.get('last_category')}, intent={current_state.get('last_intent')}")
-    
-    # Add new user message to state
-    current_state["messages"].append(HumanMessage(content=prompt))
-    
-    # Reset next node to start workflow from beginning
-    current_state["next"] = ("classify",)
-    
-    # Process workflow
-    final_response = None
-    final_state = None
-    for output in workflow.stream(current_state, config):
-        for node, state in output.items():
-            final_state = state
-            print(f"🔄 Node '{node}' executed")
-            if node == "generate_final_response":
-                final_response = state.get("final_response")
-    
-    # Add final debug
-    if final_state:
-        print(f"💾 Final state after workflow: category={final_state.get('last_category')}, intent={final_state.get('last_intent')}")
-    
-    # Display response
-    if final_response:
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": final_response
-        })
-        st.chat_message("assistant").markdown(final_response)
-    else:
-        error_msg = "No response generated. Please try again."
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": error_msg
-        })
-        st.chat_message("assistant").markdown(error_msg)
+            # Validate prompt again before creating HumanMessage
+            if not prompt:
+                st.error("Invalid input received.")
+                return
+                
+            # Add new user message to state
+            current_state["messages"].append(HumanMessage(content=prompt))
+            
+            # Reset next node to start workflow from beginning
+            current_state["next"] = ("classify",)
+            
+            # Process workflow
+            final_response = None
+            final_state = None
+            for output in workflow.stream(current_state, config):
+                for node, state in output.items():
+                    final_state = state
+                    print(f"🔄 Node '{node}' executed")
+                    if node == "generate_final_response":
+                        final_response = state.get("final_response")
+
+            # Add final debug
+            if final_state:
+                print(f"💾 Final state after workflow: category={final_state.get('last_category')}, intent={final_state.get('last_intent')}")
+
+            # Display response
+            if final_response:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": final_response
+                })
+                st.chat_message("assistant").markdown(final_response)
+            else:
+                error_msg = "No response generated. Please try again."
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": error_msg
+                })
+                st.chat_message("assistant").markdown(error_msg)
 
 if __name__ == "__main__":
     main()
